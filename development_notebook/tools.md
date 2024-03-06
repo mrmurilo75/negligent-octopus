@@ -21,6 +21,12 @@ tmux attach-session -t \<session name\>
 
 ## NVim
 
+:sp \<filepath\>
+    ? Split vertical
+
+:vsp \<filepath\>
+    ? Split horizontal
+
 ###  TODO -> Include plugin commands
 
 ## Bash
@@ -28,4 +34,14 @@ tmux attach-session -t \<session name\>
 `w`
     ? Shows processes running
 
+`ESC + b`
+    ? Equivalent to `Ctrl + \<left arrow\>`
 
+`ESC + l`
+    ? Equivalent to `Ctrl + \<right arrow\>`
+
+`ESC + \<Backspace\>`
+    ? Equivalent to `Ctrl + \<Backspace\>`
+
+`Ctrl + R` then `Enter`
+    ? Search command history. Press `Enter` for next result.
