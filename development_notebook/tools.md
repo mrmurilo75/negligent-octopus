@@ -16,6 +16,7 @@ tmux attach-session -t \<session name\>
 `Ctrl + b` then `"`
     ? Split vertical
 
+`Ctrl + b` then `Alt+[Arrow UDLR]`
 `Ctrl + b` then `:resize-pane -[UDLR] N`
     ? Resize window by `N` to [Up, Down, Left, Right]
 
