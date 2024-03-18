@@ -14,7 +14,9 @@ class Account(TimeStampedModel, SoftDeletableModel):
 
     @cached_property
     def balance(self):
-        return self.transaction_set.first().balance
+        last_transaction = self.transaction_set.first()
+        # TODO initial value
+        return last_transaction.balance if last_transaction else 0.0
 
     def __str__(self):
         return str(self.name)
@@ -36,41 +38,50 @@ class Transaction(TimeStampedModel):
     def get_account_owner(self):
         return str(self.account.owner)
 
-    @db_transaction.atomic
-    def save(self, *args, **kwargs):
-        old_model = self.__class__.objects.get(pk=self.pk)
-        if old_model.timestamp != self.timestamp or old_model.account != self.account:
-            msg = "Cannot change fields 'account' or 'timestamp'."
-            raise ValueError(msg)  # TODO: Change fields account or timestamp
-
-        if old_model.amount != self.amount:
-            msg = "Cannot change field 'amount'."
-            raise ValueError(msg)
-            # TODO: Id what trans is (del, change, create) and calculate for approp amt
-
-        if self.balance is None:
-            self.balance = self.amount
+    def update_balance(self, last_transaction=None):
+        if last_transaction is None:
             last_transaction = self.account.transaction_set.filter(
                 models.Q(timestamp__lte=self.timestamp)
                 & models.Q(created__lt=self.created),
             ).first()
-            if last_transaction is not None:
-                self.balance += last_transaction.balance
+
+        self.balance = self.amount
+        if last_transaction is None:
+            # TODO add initial balance if first transaction
+            pass
+        else:
+            self.balance += last_transaction.balance
+
+    @db_transaction.atomic
+    def save(self, *args, update_balance=True, **kwargs):
+        try:
+            old_model = self.__class__.objects.get(pk=self.pk)
+            if (
+                old_model.timestamp != self.timestamp
+                or old_model.account != self.account
+            ):
+                msg = "Cannot change fields 'account' or 'timestamp'."
+                raise ValueError(msg)  # TODO: Change fields account or timestamp
+        except self.__class__.DoesNotExist:
+            pass
+
+        if update_balance:
+            self.update_balance()
+            super().save(*args, **kwargs)
 
             universe = self.account.transaction_set.filter(
                 models.Q(timestamp__gte=self.timestamp)
                 & models.Q(created__gt=self.created),
-            ).reverse()
+            )
 
-            previous = universe.first()
-            for transaction in universe:
-                if transaction == universe.first():
-                    continue
-                transaction.balance = transaction.amount + previous.balance
-                transaction.save()
+            previous = self
+            for transaction in universe.reverse():
+                transaction.update_balance(previous)
+                transaction.save(update_balance=False)
                 previous = transaction
 
-        super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return str(self.title)
