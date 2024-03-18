@@ -13,10 +13,19 @@ class AccountAdmin(admin.ModelAdmin):
         "is_removed",
         "modified",
     ]  # TODO: Check modified catches transaction changes
+    readonly_fields = ["balance"]
 
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ["title", "account", "get_account_owner", "amount", "timestamp"]
+    list_display = [
+        "title",
+        "account",
+        "get_account_owner",
+        "amount",
+        "timestamp",
+        "balance",
+    ]
     search_fields = ["account__owner__username", "account__name", "title"]
     list_filter = ["account__owner", "account", "timestamp"]
+    readonly_fields = ["balance"]

@@ -2,25 +2,36 @@
 
 ## tmux
 
+prefix: `Ctrl + a` or `Ctrl + b`
+
 ### Session
-tmux list-sessions
-tmux attach-session -t \<session name\>
+tmux ps
+    ? list sessions
+
+tmux at -t \<session name\>
+    ? Enter session
 
 ### Windows
-`Ctrl + b` then \<arrow-key\>
-    ? Change window
+`prefix` then `[hjkl]
+    ? Change window using VIM keys
 
-`Ctrl + b` then `%`
+`prefix` then `%`
     ? Split horizontal
 
-`Ctrl + b` then `"`
+`prefix` then `"`
     ? Split vertical
 
-`Ctrl + b` then `Alt+[Arrow UDLR]`
-`Ctrl + b` then `:resize-pane -[UDLR] N`
+`prefix` then `[HJKL]`
     ? Resize window by `N` to [Up, Down, Left, Right]
 
 ## NVim
+
+`Ctrl + n` or `Ctrl + \<space\>`
+    ? Cycle autocomplete options
+
+`,` then `d`
+    ? Jump to definition
+        - Hint: duplicate window using `:sp` before jump
 
 :sp \<filepath\>
     ? Split vertical
@@ -28,7 +39,28 @@ tmux attach-session -t \<session name\>
 :vsp \<filepath\>
     ? Split horizontal
 
-###  TODO -> Include plugin commands
+### Windows
+`Ctrl + W` then `[hjkl]`
+    ? Move cursor to window
+
+`Ctrl + W` then `[HJKL]`
+    ? Move window
+
+`Ctrl + W` then `[+ -]`
+    ? Resize window vertically
+
+`Ctrl + W` then `[\< \>]`
+    ? Resize window horizontally
+
+`Ctrl + W` then `\_`
+    ? Resize to near full-screen
+
+`Ctrl + W` then `\=`
+    ? Resize to equal parts
+
+### NERDTree
+`:NERDTree`
+
 
 ## Bash
 
