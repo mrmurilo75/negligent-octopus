@@ -36,7 +36,7 @@ class TransactionInlineAdmin(admin.StackedInline):
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
-    fields = ["name", "owner", "initial_balance"]
+    fields = ["name", "owner", "initial_balance", "balance"]
     list_display = ["name", "owner", "balance", "created", "is_removed"]
     search_fields = ["name", "owner__username"]
     list_filter = [
@@ -61,8 +61,8 @@ class TransactionAdmin(admin.ModelAdmin):
     ]
     readonly_fields = ["balance"]
     list_display = [
-        "account",
         "get_account_owner",
+        "account",
         "title",
         "amount",
         "timestamp",
