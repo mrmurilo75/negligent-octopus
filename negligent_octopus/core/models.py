@@ -11,12 +11,12 @@ from negligent_octopus.users.models import User
 class Account(TimeStampedModel, SoftDeletableModel):
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
+    initial_balance = models.FloatField(default=0.0)
 
     @cached_property
     def balance(self):
         last_transaction = self.transaction_set.first()
-        # TODO initial value
-        return last_transaction.balance if last_transaction else 0.0
+        return last_transaction.balance if last_transaction else self.initial_balance
 
     def __str__(self):
         return str(self.name)
@@ -47,8 +47,7 @@ class Transaction(TimeStampedModel):
 
         self.balance = self.amount
         if last_transaction is None:
-            # TODO add initial balance if first transaction
-            pass
+            self.balance += self.account.initial_balance
         else:
             self.balance += last_transaction.balance
 
@@ -63,25 +62,28 @@ class Transaction(TimeStampedModel):
                 msg = "Cannot change fields 'account' or 'timestamp'."
                 raise ValueError(msg)  # TODO: Change fields account or timestamp
         except self.__class__.DoesNotExist:
-            pass
+            old_model = None
 
-        if update_balance:
-            self.update_balance()
+        if not update_balance:
             super().save(*args, **kwargs)
+            return
 
-            universe = self.account.transaction_set.filter(
-                models.Q(timestamp__gte=self.timestamp)
-                & models.Q(created__gt=self.created),
-            )
+        self.update_balance()
+        super().save(*args, **kwargs)
 
-            previous = self
-            for transaction in universe.reverse():
-                transaction.update_balance(previous)
-                transaction.save(update_balance=False)
-                previous = transaction
+        if old_model and old_model.balance == self.balance:
+            return
 
-        else:
-            super().save(*args, **kwargs)
+        universe = self.account.transaction_set.filter(
+            models.Q(timestamp__gte=self.timestamp)
+            & models.Q(created__gt=self.created),
+        )
+
+        previous = self
+        for transaction in universe.reverse():
+            transaction.update_balance(previous)
+            transaction.save(update_balance=False)
+            previous = transaction
 
     def __str__(self):
         return str(self.title)
