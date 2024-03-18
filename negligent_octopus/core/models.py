@@ -25,6 +25,7 @@ class Account(TimeStampedModel, SoftDeletableModel):
         verbose_name = "Account"
         verbose_name_plural = "Accounts"
         ordering = ["-modified", "name"]
+        unique_together = ["name", "owner"]
 
 
 class Transaction(TimeStampedModel):
