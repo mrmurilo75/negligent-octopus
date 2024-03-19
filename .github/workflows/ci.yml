@@ -38,16 +38,19 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:15
-        ports:
-          - 5432:5432
+      mysql:
+        image: mysql:latest
         env:
-          POSTGRES_PASSWORD: postgres
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mydatabase
+          MYSQL_USER: myuser
+          MYSQL_PASSWORD: mypassword
+        ports:
+          - 3306:3306
 
     env:
-      # postgres://user:password@host:port/database
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      # mysql://user:password@host:port/database
+      DATABASE_URL: 'mysql://myuser:mypassword@localhost:3306/mydatabase'
 
     steps:
       - name: Checkout Code Repository
