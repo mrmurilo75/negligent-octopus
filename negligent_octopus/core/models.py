@@ -1,7 +1,6 @@
 from django.db import models
 from django.db import transaction as db_transaction
 from django.utils import timezone
-from django.utils.functional import cached_property
 from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
 
@@ -13,10 +12,23 @@ class Account(TimeStampedModel, SoftDeletableModel):
     name = models.CharField(max_length=255)
     initial_balance = models.FloatField(default=0.0)
 
-    @cached_property
+    @property
     def balance(self):
         last_transaction = self.transaction_set.first()
         return last_transaction.balance if last_transaction else self.initial_balance
+
+    def save(self, *args, **kwargs):
+        try:
+            old_model = self.__class__.objects.get(pk=self.pk)
+            if (
+                old_model.initial_balance != self.initial_balance
+                and hasattr(self, "transaction_set")
+                and self.transaction_set.last() is not None
+            ):
+                self.transaction_set.last().save()  # Trigger update balance
+        except self.__class__.DoesNotExist:
+            pass
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return str(self.name)
@@ -76,8 +88,8 @@ class Transaction(TimeStampedModel):
             return
 
         universe = self.account.transaction_set.filter(
-            models.Q(timestamp__gte=self.timestamp)
-            & models.Q(created__gt=self.created),
+            models.Q(timestamp__gt=self.timestamp)
+            | (models.Q(timestamp=self.timestamp) & models.Q(created__gt=self.created)),
         )
 
         previous = self
