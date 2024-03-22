@@ -7,6 +7,20 @@ from model_utils.models import TimeStampedModel
 from negligent_octopus.users.models import User
 
 
+class Category(TimeStampedModel, SoftDeletableModel):
+    name = models.CharField(max_length=255)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return str(self.name)
+
+    class Meta(TimeStampedModel.Meta, SoftDeletableModel.Meta):
+        verbose_name = "Category"
+        verbose_name_plural = "Categories"
+        ordering = ["name"]
+        unique_together = ["owner", "name"]
+
+
 class Account(TimeStampedModel, SoftDeletableModel):
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
@@ -47,6 +61,12 @@ class Transaction(TimeStampedModel):
     balance = models.FloatField(editable=False, null=True)
     title = models.CharField(max_length=127)
     description = models.TextField(blank=True)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
 
     def get_account_owner(self):
         return str(self.account.owner)

@@ -2,7 +2,19 @@ from django.contrib import admin
 from django.forms import BaseInlineFormSet
 
 from .models import Account
+from .models import Category
 from .models import Transaction
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    fields = ["name", "owner", "is_removed"]
+    list_display = ["name", "owner"]
+    search_fields = ["name", "owner__username"]
+    list_filter = [
+        "owner",
+        "is_removed",
+    ]
 
 
 class TransactionInlineFormset(BaseInlineFormSet):
@@ -19,7 +31,7 @@ class TransactionInlineAdmin(admin.StackedInline):
             "Details",
             {
                 "classes": ["collapse"],
-                "fields": ["timestamp", "description", "balance"],
+                "fields": ["category", "timestamp", "description", "balance"],
             },
         ),
     ]
@@ -50,7 +62,7 @@ class AccountAdmin(admin.ModelAdmin):
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
     fieldsets = [
-        (None, {"fields": ["account", "title", "amount", "timestamp"]}),
+        (None, {"fields": ["account", "title", "amount", "category", "timestamp"]}),
         (
             "Details",
             {
