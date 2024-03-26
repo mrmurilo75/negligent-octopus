@@ -1,3 +1,5 @@
+from typing import Optional
+
 from django.db import models
 from django.db import transaction as db_transaction
 from django.utils import timezone
@@ -28,14 +30,18 @@ class Account(TimeStampedModel, SoftDeletableModel):
 
     @property
     def balance(self):
-        last_transaction = self.transaction_set.first()
-        return last_transaction.balance if last_transaction else self.initial_balance
+        previous_transaction = self.transaction_set.first()
+        return (
+            previous_transaction.balance
+            if previous_transaction
+            else self.initial_balance
+        )
 
     def save(self, *args, **kwargs):
         try:
-            old_model = self.__class__.objects.get(pk=self.pk)
+            old_instance = self.__class__.objects.get(pk=self.pk)
             if (
-                old_model.initial_balance != self.initial_balance
+                old_instance.initial_balance != self.initial_balance
                 and hasattr(self, "transaction_set")
                 and self.transaction_set.last() is not None
             ):
@@ -71,52 +77,114 @@ class Transaction(TimeStampedModel):
     def get_account_owner(self):
         return str(self.account.owner)
 
-    def update_balance(self, last_transaction=None):
-        if last_transaction is None:
-            last_transaction = self.account.transaction_set.filter(
-                models.Q(timestamp__lte=self.timestamp)
-                & models.Q(created__lt=self.created),
-            ).first()
-
-        self.balance = self.amount
-        if last_transaction is None:
-            self.balance += self.account.initial_balance
-        else:
-            self.balance += last_transaction.balance
-
     @db_transaction.atomic
-    def save(self, *args, update_balance=True, **kwargs):
-        try:
-            old_model = self.__class__.objects.get(pk=self.pk)
-            if (
-                old_model.timestamp != self.timestamp
-                or old_model.account != self.account
-            ):
-                msg = "Cannot change fields 'account' or 'timestamp'."
-                raise ValueError(msg)  # TODO: Change fields account or timestamp
-        except self.__class__.DoesNotExist:
-            old_model = None
-
-        if not update_balance:
-            super().save(*args, **kwargs)
-            return
-
-        self.update_balance()
-        super().save(*args, **kwargs)
-
-        if old_model and old_model.balance == self.balance:
-            return
-
+    def chain_update_balance(self, *args, **kwargs):
+        """
+        Update balance of all transactions performed after this transaction.
+        This instance functions as a manager, calling 'update_balance' on transactions.
+        """
         universe = self.account.transaction_set.filter(
             models.Q(timestamp__gt=self.timestamp)
             | (models.Q(timestamp=self.timestamp) & models.Q(created__gt=self.created)),
         )
 
-        previous = self
+        updating = self.update_balance()
+        super().save(*args, **kwargs)
+        previous_balance = self.balance
         for transaction in universe.reverse():
-            transaction.update_balance(previous)
-            transaction.save(update_balance=False)
-            previous = transaction
+            if not updating:
+                return
+            updating = transaction.update_balance(previous_balance=previous_balance)
+            transaction.save(*args, update_balance=False, **kwargs)
+            previous_balance = transaction.balance
+
+    def update_balance(
+        self,
+        *,
+        previous_balance: float | None = None,
+        previous_transaction: Optional["Transaction"] = None,
+        skip_check: bool = False,
+    ) -> bool:
+        """
+        Update the balance of this instance. Does not write to database.
+
+        Args:
+            previous_balance (float, optional):
+                Uses this value to calculate balance, if provided.
+            previous_transaction (Optional['Transaction']):
+                Uses the balance of this transaction to calculate balance, if provided.
+            skip_check (bool, optional):
+                Don't check if the balance has changed. Defaults to False.
+        Returns:
+            Returns if the balance has changed.
+            If skip_check is set to True, returns True.
+        """
+        if previous_balance is not None:
+            self.balance = previous_balance
+        elif previous_transaction is not None:
+            self.balance = previous_transaction.balance
+        else:
+            previous_transaction = self.account.transaction_set.filter(
+                models.Q(timestamp__lte=self.timestamp)
+                & models.Q(created__lt=self.created),
+            ).first()
+            if previous_transaction is not None:
+                self.balance = previous_transaction.balance
+            else:
+                self.balance = self.account.initial_balance
+
+        self.balance += self.amount
+
+        try:
+            old_instance = self.__class__.objects.get(pk=self.pk)
+        except self.__class__.DoesNotExist:
+            old_instance = None
+
+        return (
+            True
+            if skip_check or old_instance is None
+            else old_instance.balance != self.balance
+        )
+
+    @db_transaction.atomic
+    def save(
+        self,
+        *args,
+        update_balance=True,
+        force_insert=False,
+        force_update=False,
+        update_fields=None,
+        **kwargs,
+    ):
+        if force_update or update_fields:
+            if update_balance:
+                msg = (
+                    "Cannot update balance when using 'force_update', or "
+                    f"'update_fields'. Received (force_update={force_update}, "
+                    f"update_fields={update_fields})."
+                )
+                raise ValueError(msg)
+            super().save(*args, force_insert, force_update, update_fields, **kwargs)
+
+        try:
+            old_instance = self.__class__.objects.get(pk=self.pk)
+            # TODO Allow change timestamp ->
+            #    If moved backwards, continue.
+            #    If moved forward, subtract amount starting at old_timestamp
+            #       until new timestamp.
+            if (
+                old_instance.account != self.account
+                or old_instance.timestamp != self.timestamp
+            ):
+                msg = "Cannot change 'account'."
+                raise ValueError(msg)
+        except self.__class__.DoesNotExist:
+            old_instance = None
+
+        if update_balance:
+            self.chain_update_balance(*args, **kwargs)
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return str(self.title)
