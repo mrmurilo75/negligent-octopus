@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 from datetime import timedelta
 
 import pytest
@@ -6,6 +7,7 @@ from faker import Faker
 
 from negligent_octopus.core.models import Account
 from negligent_octopus.core.tests.factories import TransactionFactory
+from negligent_octopus.core.tests.fixtures import account  # noqa: F401
 
 faker = Faker()
 
