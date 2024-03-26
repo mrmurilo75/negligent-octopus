@@ -77,9 +77,15 @@ class TransactionAdmin(admin.ModelAdmin):
         "account",
         "title",
         "amount",
+        "category",
         "timestamp",
         "balance",
     ]
     list_display_links = ["title"]
-    search_fields = ["account__owner__username", "account__name", "title"]
-    list_filter = ["account__owner", "account", "timestamp"]
+    search_fields = [
+        "account__owner__username",
+        "account__name",
+        "title",
+        "category__name",
+    ]
+    list_filter = ["account__owner", "account", "category", "timestamp"]
