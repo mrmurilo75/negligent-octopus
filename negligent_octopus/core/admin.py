@@ -19,19 +19,19 @@ class CategoryAdmin(admin.ModelAdmin):
 
 class TransactionInlineFormset(BaseInlineFormSet):
     def get_queryset(self, *args, **kwargs):
-        return super().get_queryset(*args, **kwargs).reverse()[: self.limit_queryset]
+        return super().get_queryset(*args, **kwargs)[: self.limit_queryset]
 
 
 class TransactionInlineAdmin(admin.StackedInline):
     model = Transaction
     fk_name = "account"
     fieldsets = [
-        (None, {"fields": ["title", "amount"]}),
+        (None, {"fields": ["title", "amount", "category"]}),
         (
             "Details",
             {
                 "classes": ["collapse"],
-                "fields": ["category", "timestamp", "description", "balance"],
+                "fields": ["timestamp", "description", "balance"],
             },
         ),
     ]
@@ -89,3 +89,8 @@ class TransactionAdmin(admin.ModelAdmin):
         "category__name",
     ]
     list_filter = ["account__owner", "account", "category", "timestamp"]
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return self.readonly_fields
+        return [*self.readonly_fields, "account"]
