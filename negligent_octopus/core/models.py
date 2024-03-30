@@ -73,9 +73,26 @@ class Transaction(TimeStampedModel):
         null=True,
         blank=True,
     )
+    destination_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="transfer_set",
+        null=True,
+    )
+    transfer_transaction = models.ForeignKey(
+        "self",
+        on_delete=models.RESTRICT,
+        related_name="+",
+        unique=True,  # OneToOne
+        null=True,
+        editable=False,
+    )
 
     def get_account_owner(self):
         return str(self.account.owner)
+
+    def is_transfer(self):
+        return bool(self.destination_account)
 
     @db_transaction.atomic
     def chain_update_balance(self, *args, **kwargs):
@@ -146,11 +163,31 @@ class Transaction(TimeStampedModel):
             else old_instance.balance != self.balance
         )
 
+    def sync_transfer(self, *args, **kwargs):
+        if self.destination_account is None:
+            return
+
+        if self.transfer_transaction is None:
+            self.transfer_transaction = Transaction()
+
+        self.transfer_transaction.amount = -self.amount
+        self.transfer_transaction.account = self.destination_account
+        self.transfer_transaction.timestamp = self.timestamp
+        self.transfer_transaction.title = self.title
+        self.transfer_transaction.description = self.description
+        self.transfer_transaction.category = self.category
+        self.transfer_transaction.destination_account = self.account
+
+        self.transfer_transaction.save(*args, sync_transfer=False, **kwargs)
+
+        self.transfer_transaction.transfer_transaction = self
+
     @db_transaction.atomic
-    def save(
+    def save(  # noqa: PLR0913
         self,
         *args,
         update_balance=True,
+        sync_transfer=True,
         force_insert=False,
         force_update=False,
         update_fields=None,
@@ -183,6 +220,9 @@ class Transaction(TimeStampedModel):
 
         if update_balance:
             self.chain_update_balance(*args, **kwargs)
+
+        if sync_transfer and self.destination_account is not None:
+            self.sync_transfer(*args, **kwargs)
 
         super().save(*args, **kwargs)
 

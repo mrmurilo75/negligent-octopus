@@ -34,8 +34,15 @@ class TransactionInlineAdmin(admin.StackedInline):
                 "fields": ["timestamp", "description", "balance"],
             },
         ),
+        (
+            "Transfer",
+            {
+                "classes": ["collapse"],
+                "fields": ["destination_account", "transfer_transaction"],
+            },
+        ),
     ]
-    readonly_fields = ["balance"]
+    readonly_fields = ["balance", "transfer_transaction"]
     extra = 0
     formset = TransactionInlineFormset
     limit_queryset = 10
@@ -62,12 +69,19 @@ class AccountAdmin(admin.ModelAdmin):
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
     fieldsets = [
-        (None, {"fields": ["account", "title", "amount", "category", "timestamp"]}),
+        (None, {"fields": ["account", "title", "amount"]}),
         (
             "Details",
             {
                 "classes": ["collapse"],
-                "fields": ["description", "balance"],
+                "fields": ["category", "timestamp", "description", "balance"],
+            },
+        ),
+        (
+            "Transfer",
+            {
+                "classes": ["collapse"],
+                "fields": ["destination_account", "transfer_transaction"],
             },
         ),
     ]
@@ -80,6 +94,7 @@ class TransactionAdmin(admin.ModelAdmin):
         "category",
         "timestamp",
         "balance",
+        "is_transfer",
     ]
     list_display_links = ["title"]
     search_fields = [

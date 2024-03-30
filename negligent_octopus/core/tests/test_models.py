@@ -6,10 +6,32 @@ from django.utils import timezone
 from faker import Faker
 
 from negligent_octopus.core.models import Account
+from negligent_octopus.core.tests.factories import AccountFactory
 from negligent_octopus.core.tests.factories import TransactionFactory
 from negligent_octopus.core.tests.fixtures import account  # noqa: F401
 
 faker = Faker()
+
+
+@pytest.mark.django_db()
+def test_transaction_transfer(account: Account):
+    transaction = TransactionFactory(
+        account=account,
+        amount=10.10,
+        timestamp=timezone.now(),
+    )
+    destination_account = AccountFactory()
+    transaction.destination_account = destination_account
+    transaction.save()
+
+    assert transaction.transfer_transaction.amount == -transaction.amount
+    assert transaction.transfer_transaction.account == transaction.destination_account
+    assert transaction.transfer_transaction.timestamp == transaction.timestamp
+    assert transaction.transfer_transaction.title == transaction.title
+    assert transaction.transfer_transaction.description == transaction.description
+    assert transaction.transfer_transaction.category == transaction.category
+    assert transaction.transfer_transaction.destination_account == transaction.account
+    assert transaction.transfer_transaction.transfer_transaction == transaction
 
 
 @pytest.mark.django_db()
