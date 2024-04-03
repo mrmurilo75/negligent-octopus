@@ -73,9 +73,12 @@ class Transaction(TimeStampedModel):
         null=True,
         blank=True,
     )
+    destination_account_name = models.CharField(max_length=255, blank=True)
     destination_account = models.ForeignKey(
         Account,
         on_delete=models.PROTECT,
+        # TODO: Set account name to the name, and set this to none
+        # '--> Same as deleting transaction without deleting transfer
         related_name="transfer_set",
         null=True,
     )
@@ -205,6 +208,7 @@ class Transaction(TimeStampedModel):
 
         try:
             old_instance = self.__class__.objects.get(pk=self.pk)
+            # TODO Change recalculating balance on transactions to a lazy strategy
             # TODO Allow change timestamp ->
             #    If moved backwards, continue.
             #    If moved forward, subtract amount starting at old_timestamp
@@ -225,6 +229,23 @@ class Transaction(TimeStampedModel):
             self.sync_transfer(*args, **kwargs)
 
         super().save(*args, **kwargs)
+
+    @db_transaction.atomic
+    def delete(self, *args, delete_transfer=True, using=None, **kwargs):
+        transfer = self.transfer_transaction
+        if delete_transfer and transfer is not None:
+            transfer.destination_account_name = str(transfer.destination_account)
+            transfer.destination_account = None
+
+        self.destination_account = None
+        self.transfer_transaction = None
+        self.amount = 0
+        self.save(using=using)
+
+        if delete_transfer and transfer is not None:
+            transfer.delete(*args, delete_transfer=False, using=using, **kwargs)
+
+        super().delete(*args, using=using, **kwargs)
 
     def __str__(self):
         return str(self.title)

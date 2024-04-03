@@ -6,6 +6,7 @@ from django.utils import timezone
 from faker import Faker
 
 from negligent_octopus.core.models import Account
+from negligent_octopus.core.models import Transaction
 from negligent_octopus.core.tests.factories import AccountFactory
 from negligent_octopus.core.tests.factories import TransactionFactory
 from negligent_octopus.core.tests.fixtures import account  # noqa: F401
@@ -20,18 +21,47 @@ def test_transaction_transfer(account: Account):
         amount=10.10,
         timestamp=timezone.now(),
     )
-    destination_account = AccountFactory()
-    transaction.destination_account = destination_account
+    transaction.destination_account = AccountFactory()
     transaction.save()
 
     assert transaction.transfer_transaction.amount == -transaction.amount
     assert transaction.transfer_transaction.account == transaction.destination_account
+    assert (
+        transaction.destiantion_account.balance
+        == transaction.destination_account.initial_balance - transaction.balance
+    )
     assert transaction.transfer_transaction.timestamp == transaction.timestamp
     assert transaction.transfer_transaction.title == transaction.title
     assert transaction.transfer_transaction.description == transaction.description
     assert transaction.transfer_transaction.category == transaction.category
     assert transaction.transfer_transaction.destination_account == transaction.account
     assert transaction.transfer_transaction.transfer_transaction == transaction
+
+
+@pytest.mark.django_db()
+def test_transaction_transfer_delete(account: Account):
+    transaction = TransactionFactory(
+        account=account,
+        amount=10.10,
+        timestamp=timezone.now(),
+    )
+    destination_account = AccountFactory()
+    transaction.destination_account = destination_account
+    transaction.save()
+
+    transaction_pk = transaction.pk
+    transfer_pk = transaction.transfer_transaction.pk
+
+    transaction.delete(delete_transfer=True)
+
+    with pytest.raises(Transaction.DoesNotExist):
+        Transaction.objects.get(pk=transaction_pk)
+
+    with pytest.raises(Transaction.DoesNotExist):
+        Transaction.objects.get(pk=transfer_pk)
+
+    assert account.balance == account.initial_balance
+    assert destination_account.balance == destination_account.initial_balance
 
 
 @pytest.mark.django_db()
@@ -165,3 +195,33 @@ class TestAccountTransactionBalance:
         assert first_transaction.balance == account.initial_balance + 1
         assert second_transaction.balance == account.initial_balance + 1 + 20
         assert third_transaction.balance == account.initial_balance + 1 + 20 + 100
+
+    def test_transaction_delete(self, account: Account):
+        now = timezone.now()
+        first_transaction = TransactionFactory(
+            account=account,
+            amount=1,
+            timestamp=now,
+        )
+        second_transaction = TransactionFactory(
+            account=account,
+            amount=10,
+            timestamp=now + timedelta(minutes=1),
+        )
+        third_transaction = TransactionFactory(
+            account=account,
+            amount=100,
+            timestamp=now + timedelta(minutes=2),
+        )
+        second_pk = second_transaction.pk
+        second_transaction.delete()
+
+        # Reload instances
+        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
+        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
+
+        assert first_transaction.balance == account.initial_balance + 1
+        with pytest.raises(Transaction.DoesNotExist):
+            account.transaction_set.get(pk=second_pk)
+
+        assert third_transaction.balance == account.initial_balance + 1 + 100
