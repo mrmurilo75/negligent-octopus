@@ -27,7 +27,7 @@ def test_transaction_transfer(account: Account):
     assert transaction.transfer_transaction.amount == -transaction.amount
     assert transaction.transfer_transaction.account == transaction.destination_account
     assert (
-        transaction.destiantion_account.balance
+        transaction.destination_account.balance
         == transaction.destination_account.initial_balance - transaction.balance
     )
     assert transaction.transfer_transaction.timestamp == transaction.timestamp
