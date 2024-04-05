@@ -1,5 +1,3 @@
-from typing import Optional
-
 from django.db import models
 from django.db import transaction as db_transaction
 from django.utils import timezone
@@ -50,6 +48,10 @@ class Account(TimeStampedModel, SoftDeletableModel):
             pass
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        # TODO Delete all transfers before continuing
+        return super().delete(*args, **kwargs)
+
     def __str__(self):
         return str(self.name)
 
@@ -91,6 +93,48 @@ class Transaction(TimeStampedModel):
         editable=False,
     )
 
+    def after(self, using=None):
+        """
+        Returns:
+            All transactions in this account that happened after this.
+        """
+        universe = self.account.transaction_set
+        if using is not None:
+            universe = universe.using(using)
+
+        return universe.filter(
+            models.Q(timestamp__gt=self.timestamp)
+            | (models.Q(timestamp=self.timestamp) & models.Q(created__gt=self.created)),
+        )
+
+    def next(self, using=None):
+        """
+        Returns:
+            The transaction in this account that happened right after this.
+        """
+        return self.after(using=using).last()
+
+    def before(self, using=None):
+        """
+        Returns:
+            All transactions in this account that happened after this.
+        """
+        universe = self.account.transaction_set
+        if using is not None:
+            universe = universe.using(using)
+
+        return universe.filter(
+            models.Q(timestamp__lt=self.timestamp)
+            | (models.Q(timestamp=self.timestamp) & models.Q(created__lt=self.created)),
+        )
+
+    def previous(self, using=None):
+        """
+        Returns:
+            The transaction in this account that happened right after this.
+        """
+        return self.before(using=using).first()
+
     def get_account_owner(self):
         return str(self.account.owner)
 
@@ -98,32 +142,35 @@ class Transaction(TimeStampedModel):
         return bool(self.destination_account)
 
     @db_transaction.atomic
-    def chain_update_balance(self, *args, **kwargs):
+    def chain_update_balance(self, start_transaction, *args, **kwargs):
         """
         Update balance of all transactions performed after this transaction.
         This instance functions as a manager, calling 'update_balance' on transactions.
         """
-        universe = self.account.transaction_set.filter(
-            models.Q(timestamp__gt=self.timestamp)
-            | (models.Q(timestamp=self.timestamp) & models.Q(created__gt=self.created)),
-        )
+        using = kwargs.get("using")
+        kwargs["sync_transfer"] = False
+        kwargs["update_balance"] = False
 
-        updating = self.update_balance()
-        super().save(*args, **kwargs)
-        previous_balance = self.balance
+        universe = start_transaction.after(using=using)
+
+        def update_balance(transaction, previous_balance):
+            if transaction.update_balance(
+                previous_balance=previous_balance,
+                using=using,
+            ):
+                transaction.save(*args, **kwargs)
+            return transaction.balance
+
+        previous_balance = update_balance(start_transaction, None)
         for transaction in universe.reverse():
-            if not updating:
-                return
-            updating = transaction.update_balance(previous_balance=previous_balance)
-            transaction.save(*args, update_balance=False, **kwargs)
-            previous_balance = transaction.balance
+            previous_balance = update_balance(transaction, previous_balance)
 
     def update_balance(
         self,
         *,
         previous_balance: float | None = None,
-        previous_transaction: Optional["Transaction"] = None,
         skip_check: bool = False,
+        using=None,
     ) -> bool:
         """
         Update the balance of this instance. Does not write to database.
@@ -141,13 +188,8 @@ class Transaction(TimeStampedModel):
         """
         if previous_balance is not None:
             self.balance = previous_balance
-        elif previous_transaction is not None:
-            self.balance = previous_transaction.balance
         else:
-            previous_transaction = self.account.transaction_set.filter(
-                models.Q(timestamp__lte=self.timestamp)
-                & models.Q(created__lt=self.created),
-            ).first()
+            previous_transaction = self.previous(using=using)
             if previous_transaction is not None:
                 self.balance = previous_transaction.balance
             else:
@@ -156,7 +198,10 @@ class Transaction(TimeStampedModel):
         self.balance += self.amount
 
         try:
-            old_instance = self.__class__.objects.get(pk=self.pk)
+            manager = self.__class__.objects
+            if using is not None:
+                manager = manager.using(using)
+            old_instance = manager.get(pk=self.pk)
         except self.__class__.DoesNotExist:
             old_instance = None
 
@@ -186,44 +231,53 @@ class Transaction(TimeStampedModel):
         self.transfer_transaction.transfer_transaction = self
 
     @db_transaction.atomic
-    def save(  # noqa: PLR0913
+    def save(
         self,
         *args,
         update_balance=True,
         sync_transfer=True,
-        force_insert=False,
-        force_update=False,
-        update_fields=None,
+        using=None,
         **kwargs,
     ):
-        if force_update or update_fields:
-            if update_balance:
-                msg = (
-                    "Cannot update balance when using 'force_update', or "
-                    f"'update_fields'. Received (force_update={force_update}, "
-                    f"update_fields={update_fields})."
-                )
-                raise ValueError(msg)
-            super().save(*args, force_insert, force_update, update_fields, **kwargs)
-
         try:
-            old_instance = self.__class__.objects.get(pk=self.pk)
+            manager = self.__class__.objects
+            if using is not None:
+                manager = manager.using(using)
+            old_instance = manager.get(pk=self.pk)
             # TODO Change recalculating balance on transactions to a lazy strategy
             # TODO Allow change timestamp ->
             #    If moved backwards, continue.
             #    If moved forward, subtract amount starting at old_timestamp
             #       until new timestamp.
-            if (
-                old_instance.account != self.account
-                or old_instance.timestamp != self.timestamp
-            ):
+            msg = None
+            if old_instance.account != self.account:
                 msg = "Cannot change 'account'."
+            if (
+                old_instance.destination_account is not None
+                and old_instance.destination_account != self.destination_account
+                and not (  # Allow remove destination_account if "_name is added
+                    self.destination_account is None
+                    and self.destination_account_name is not None
+                )
+            ):
+                msg = "Cannot change 'destination_account'."
                 raise ValueError(msg)
         except self.__class__.DoesNotExist:
             old_instance = None
 
+        start_transaction = self
+        if old_instance is not None and self.timestamp > old_instance.timestamp:
+            start_transaction = old_instance.next()
+
+        super().save(*args, **kwargs)
+
+        kwargs.pop(
+            "force_insert",
+            None,
+        )  # We might call super().save again, so we cannot force insert
+
         if update_balance:
-            self.chain_update_balance(*args, **kwargs)
+            self.chain_update_balance(start_transaction, *args, **kwargs)
 
         if sync_transfer and self.destination_account is not None:
             self.sync_transfer(*args, **kwargs)
