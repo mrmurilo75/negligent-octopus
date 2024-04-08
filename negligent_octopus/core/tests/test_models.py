@@ -226,3 +226,34 @@ class TestAccountTransactionBalance:
             account.transaction_set.get(pk=second_pk)
 
         assert third_transaction.balance == account.initial_balance + 1 + 100
+
+    def test_transaction_timestamp_forward(self, account: Account):
+        now = timezone.now()
+        first_transaction = TransactionFactory(
+            account=account,
+            amount=1,
+            timestamp=now,
+        )
+        second_transaction = TransactionFactory(
+            account=account,
+            amount=10,
+            timestamp=now + timedelta(minutes=1),
+        )
+        third_transaction = TransactionFactory(
+            account=account,
+            amount=100,
+            timestamp=now + timedelta(minutes=2),
+        )
+        second_transaction.timestamp = now + timedelta(minutes=3)
+        second_transaction.save()
+
+        # Reload instances
+        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
+        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
+
+        assert first_transaction.balance == account.initial_balance + 1
+        assert third_transaction.balance == account.initial_balance + 1 + 100
+        assert second_transaction.balance == account.initial_balance + 1 + 10 + 100
+
+        assert second_transaction.next() is None
+        assert second_transaction.previous() == third_transaction

@@ -153,24 +153,30 @@ class Transaction(TimeStampedModel):
 
         universe = start_transaction.after(using=using)
 
-        def update_balance(transaction, previous_balance):
-            if transaction.update_balance(
+        def inner_update_balance(transaction, previous_balance):
+            transaction.update_balance(
                 previous_balance=previous_balance,
                 using=using,
-            ):
-                transaction.save(*args, **kwargs)
+                commit=True,
+            )
             return transaction.balance
 
-        previous_balance = update_balance(start_transaction, None)
+        previous_balance = inner_update_balance(start_transaction, None)
+
         for transaction in universe.reverse():
-            previous_balance = update_balance(transaction, previous_balance)
+            previous_balance = inner_update_balance(
+                self if transaction.pk == self.pk else transaction,
+                previous_balance,
+            )
+            # 'universe' qs returns a new instance of this transaction
+            # which is saved but overriden if we later call save on this transaction.
 
     def update_balance(
         self,
         *,
         previous_balance: float | None = None,
-        skip_check: bool = False,
         using=None,
+        commit=False,
     ) -> bool:
         """
         Update the balance of this instance. Does not write to database.
@@ -182,6 +188,10 @@ class Transaction(TimeStampedModel):
                 Uses the balance of this transaction to calculate balance, if provided.
             skip_check (bool, optional):
                 Don't check if the balance has changed. Defaults to False.
+            commit (bool, optional):
+                Whether to save the updated balance. If it is an update operation,
+                it saves only the balance. Defaults to False.
+
         Returns:
             Returns if the balance has changed.
             If skip_check is set to True, returns True.
@@ -205,11 +215,17 @@ class Transaction(TimeStampedModel):
         except self.__class__.DoesNotExist:
             old_instance = None
 
-        return (
-            True
-            if skip_check or old_instance is None
-            else old_instance.balance != self.balance
-        )
+        if commit:
+            kwargs = {
+                "using": using,
+                "update_balance": False,
+                "sync_transfer": False,
+            }
+            if old_instance is not None:
+                kwargs["update_fields"] = ("balance",)
+            self.save(**kwargs)
+
+        return old_instance is None or old_instance.balance != self.balance
 
     def sync_transfer(self, *args, **kwargs):
         if self.destination_account is None:
@@ -226,6 +242,8 @@ class Transaction(TimeStampedModel):
         self.transfer_transaction.category = self.category
         self.transfer_transaction.destination_account = self.account
 
+        for kw in ("force_insert", "force_update", "update_fields"):
+            kwargs.pop(kw, None)
         self.transfer_transaction.save(*args, sync_transfer=False, **kwargs)
 
         self.transfer_transaction.transfer_transaction = self
@@ -266,7 +284,11 @@ class Transaction(TimeStampedModel):
             old_instance = None
 
         start_transaction = self
-        if old_instance is not None and self.timestamp > old_instance.timestamp:
+        if (
+            old_instance is not None
+            and self.timestamp > old_instance.timestamp
+            and self.pk != self.account.transaction_set.first()
+        ):
             start_transaction = old_instance.next()
 
         super().save(*args, **kwargs)
