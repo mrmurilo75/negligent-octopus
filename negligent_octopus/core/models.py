@@ -82,6 +82,7 @@ class Transaction(TimeStampedModel):
         # TODO: Set account name to the name, and set this to none
         # '--> Same as deleting transaction without deleting transfer
         related_name="transfer_set",
+        blank=True,
         null=True,
     )
     transfer_transaction = models.ForeignKey(

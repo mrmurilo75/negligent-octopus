@@ -19,7 +19,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 class TransactionInlineFormset(BaseInlineFormSet):
     def get_queryset(self, *args, **kwargs):
-        return super().get_queryset(*args, **kwargs)[: self.limit_queryset]
+        return super().get_queryset(*args, **kwargs)[: self.limit_queryset][::-1]
 
 
 class TransactionInlineAdmin(admin.StackedInline):
@@ -85,7 +85,7 @@ class TransactionAdmin(admin.ModelAdmin):
             },
         ),
     ]
-    readonly_fields = ["balance"]
+    readonly_fields = ["balance", "transfer_transaction"]
     list_display = [
         "get_account_owner",
         "account",
