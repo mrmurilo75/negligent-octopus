@@ -43,7 +43,7 @@ class TransactionInlineAdmin(admin.StackedInline):
         ),
     ]
     readonly_fields = ["balance", "transfer_transaction"]
-    extra = 0
+    extra = 1
     formset = TransactionInlineFormset
     limit_queryset = 10
 
