@@ -92,6 +92,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "negligent_octopus.users",
     # Your stuff: custom apps go here
+    "negligent_octopus.utils",
     "negligent_octopus.core",
     "negligent_octopus.budget",
 ]
