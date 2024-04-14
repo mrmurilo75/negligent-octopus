@@ -1,5 +1,7 @@
 from django.contrib import admin
-from django.forms import BaseInlineFormSet
+
+from negligent_octopus.utils.admin import LimitedQuerysetInlineAdmin
+from negligent_octopus.utils.admin import LimitedQuerysetInlineFormset
 
 from .models import Account
 from .models import Category
@@ -17,12 +19,12 @@ class CategoryAdmin(admin.ModelAdmin):
     ]
 
 
-class TransactionInlineFormset(BaseInlineFormSet):
+class TransactionInlineFormset(LimitedQuerysetInlineFormset):
     def get_queryset(self, *args, **kwargs):
-        return super().get_queryset(*args, **kwargs)[: self.limit_queryset][::-1]
+        return super().get_queryset(*args, **kwargs)[::-1]
 
 
-class TransactionInlineAdmin(admin.StackedInline):
+class TransactionInlineAdmin(LimitedQuerysetInlineAdmin):
     model = Transaction
     fk_name = "account"
     fieldsets = [
@@ -43,14 +45,8 @@ class TransactionInlineAdmin(admin.StackedInline):
         ),
     ]
     readonly_fields = ["balance", "transfer_transaction"]
-    extra = 1
+    extra = 0
     formset = TransactionInlineFormset
-    limit_queryset = 10
-
-    def get_formset(self, *args, **kwargs):
-        fs = super().get_formset(*args, **kwargs)
-        fs.limit_queryset = self.limit_queryset
-        return fs
 
 
 @admin.register(Account)
@@ -102,6 +98,8 @@ class TransactionAdmin(admin.ModelAdmin):
         "account__name",
         "title",
         "category__name",
+        "balance",
+        "amount",
     ]
     list_filter = ["account__owner", "account", "category", "timestamp"]
 
