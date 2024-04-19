@@ -42,6 +42,11 @@ class ImportActivoAdmin(admin.ModelAdmin):
     ]
     inlines = [ImportedActivoTransactionInlineAdmin]
 
+    def get_inlines(self, request, obj):
+        if obj is None:
+            return ()
+        return super().get_inlines(request, obj)
+
     def get_readonly_fields(
         self,
         request,
@@ -49,9 +54,9 @@ class ImportActivoAdmin(admin.ModelAdmin):
     ):
         if obj is None:
             return self.readonly_fields
-        readonly_fields = [*self.readonly_fields, "load"]
+        readonly_fields = [*self.readonly_fields, "load", "processed"]
         if obj.processed:
-            readonly_fields += ["account", "processed"]
+            readonly_fields += ["account"]
         return readonly_fields
 
 

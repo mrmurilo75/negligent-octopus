@@ -1,4 +1,10 @@
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.text import slugify
 from model_utils.models import TimeStampedModel
 
@@ -59,6 +65,32 @@ class ImportActivo(TimeStampedModel):
             self._set_name_from_filename()
         super().save(*args, **kwargs)
 
+        if not self.processed:
+            with (Path(settings.MEDIA_ROOT) / Path(self.load.name)).open("rb") as xslx:
+                xls = pd.read_excel(
+                    xslx,
+                    skiprows=7,
+                    names=[
+                        "date_of_movement",
+                        "date_of_process",
+                        "description",
+                        "value",
+                        "balance",
+                    ],
+                )
+                for _i, row in xls.iterrows():
+                    try:
+                        self.importedactivotransaction_set.get(**row)
+                    except ImportedActivoTransaction.DoesNotExist:
+                        # TODO Pass in relevant *args, kwargs
+                        ImportedActivoTransaction.objects.create(
+                            loaded_from=self,
+                            **row,
+                        )
+            self.processed = True
+            kwargs["update_fields"] = {"processed"}
+            super().save(*args, **kwargs)
+
     class Meta(TimeStampedModel.Meta):
         verbose_name = "Activo Import"
         verbose_name_plural = "Activo Imports"
@@ -69,7 +101,7 @@ class ImportedActivoTransaction(TimeStampedModel):
     loaded_from = models.ForeignKey(ImportActivo, on_delete=models.RESTRICT)
     date_of_movement = models.DateField()
     date_of_process = models.DateField()
-    description = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=255)
     value = models.FloatField()
     balance = models.FloatField()
     validated = models.BooleanField(default=False)
@@ -85,6 +117,23 @@ class ImportedActivoTransaction(TimeStampedModel):
 
     def has_transaction(self):
         return self.transaction is not None
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.validated and not self.transaction:
+            self.transaction = Transaction.objects.create(
+                account=self.loaded_from.account,
+                amount=self.value,
+                timestamp=datetime.combine(
+                    self.date_of_process,
+                    datetime.min.time(),
+                    tzinfo=timezone.get_current_timezone(),
+                ),
+                balance=self.balance,
+                title=self.description,
+            )
+            kwargs["update_fields"] = {"transaction", "validated"}
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return str(self.description)
