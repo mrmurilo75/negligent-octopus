@@ -60,33 +60,41 @@ class ImportActivo(TimeStampedModel):
             name = self.load.name
         self.name = get_filename_no_extension(name)
 
+    def _create_imported_transactions(self, commit=True):  # noqa: FBT002
+        transactions = []
+        with (Path(settings.MEDIA_ROOT) / Path(self.load.name)).open("rb") as xslx:
+            xls = pd.read_excel(
+                xslx,
+                skiprows=7,
+                names=[
+                    "date_of_movement",
+                    "date_of_process",
+                    "description",
+                    "value",
+                    "balance",
+                ],
+            )
+        for _i, row in xls.iterrows():
+            try:
+                self.importedactivotransaction_set.get(**row)
+            except ImportedActivoTransaction.DoesNotExist:
+                # TODO Pass in relevant args, kwargs
+                transaction = ImportedActivoTransaction(
+                    loaded_from=self,
+                    **row,
+                )
+                transactions.append(transaction)
+                if commit:
+                    transaction.save()
+        return transactions
+
     def save(self, *args, **kwargs):
         if not self.name:
             self._set_name_from_filename()
         super().save(*args, **kwargs)
 
         if not self.processed:
-            with (Path(settings.MEDIA_ROOT) / Path(self.load.name)).open("rb") as xslx:
-                xls = pd.read_excel(
-                    xslx,
-                    skiprows=7,
-                    names=[
-                        "date_of_movement",
-                        "date_of_process",
-                        "description",
-                        "value",
-                        "balance",
-                    ],
-                )
-                for _i, row in xls.iterrows():
-                    try:
-                        self.importedactivotransaction_set.get(**row)
-                    except ImportedActivoTransaction.DoesNotExist:
-                        # TODO Pass in relevant *args, kwargs
-                        ImportedActivoTransaction.objects.create(
-                            loaded_from=self,
-                            **row,
-                        )
+            self._create_imported_transactions(commit=True)
             self.processed = True
             kwargs["update_fields"] = {"processed"}
             super().save(*args, **kwargs)

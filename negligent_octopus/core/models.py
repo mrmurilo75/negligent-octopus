@@ -268,9 +268,9 @@ class Transaction(TimeStampedModel):
             #    If moved backwards, continue.
             #    If moved forward, subtract amount starting at old_timestamp
             #       until new timestamp.
-            msg = None
             if old_instance.account != self.account:
                 msg = "Cannot change 'account'."
+                raise ValueError(msg)
             if (
                 old_instance.destination_account is not None
                 and old_instance.destination_account != self.destination_account
@@ -284,14 +284,6 @@ class Transaction(TimeStampedModel):
         except self.__class__.DoesNotExist:
             old_instance = None
 
-        start_transaction = self
-        if (
-            old_instance is not None
-            and self.timestamp > old_instance.timestamp
-            and self.pk != self.account.transaction_set.first()
-        ):
-            start_transaction = old_instance.next()
-
         super().save(*args, **kwargs)
 
         kwargs.pop(
@@ -299,7 +291,14 @@ class Transaction(TimeStampedModel):
             None,
         )  # We might call super().save again, so we cannot force insert
 
-        if update_balance:
+        if update_balance and "balance" not in kwargs.get("update_fields", []):
+            start_transaction = self
+            if (
+                old_instance is not None
+                and self.timestamp > old_instance.timestamp
+                and self.pk != self.account.transaction_set.first()
+            ):
+                start_transaction = old_instance.next()
             self.chain_update_balance(start_transaction, *args, **kwargs)
 
         if sync_transfer and self.destination_account is not None:
@@ -330,5 +329,9 @@ class Transaction(TimeStampedModel):
     class Meta(TimeStampedModel.Meta):
         verbose_name = "Transaction"
         verbose_name_plural = "Transactions"
-        ordering = ["-timestamp", "-created"]
+        ordering = [
+            # DO NOT CHANGE - This is assumed for many functionalities
+            "-timestamp",
+            "-created",
+        ]
         unique_together = ["timestamp", "created"]
