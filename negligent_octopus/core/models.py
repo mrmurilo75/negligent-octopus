@@ -1,5 +1,8 @@
+from typing import Union
+
 from django.db import models
 from django.db import transaction as db_transaction
+from django.db.models.query import QuerySet
 from django.utils import timezone
 from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
@@ -94,7 +97,7 @@ class Transaction(TimeStampedModel):
         editable=False,
     )
 
-    def after(self, using=None):
+    def after(self, using=None) -> QuerySet:
         """
         Returns:
             All transactions in this account that happened after this.
@@ -108,14 +111,15 @@ class Transaction(TimeStampedModel):
             | (models.Q(timestamp=self.timestamp) & models.Q(created__gt=self.created)),
         )
 
-    def next(self, using=None):
+    def next(self, using=None) -> Union["Transaction", None]:
         """
         Returns:
             The transaction in this account that happened right after this.
+            Or None if it is the first transaction.
         """
         return self.after(using=using).last()
 
-    def before(self, using=None):
+    def before(self, using=None) -> QuerySet:
         """
         Returns:
             All transactions in this account that happened after this.
@@ -129,16 +133,15 @@ class Transaction(TimeStampedModel):
             | (models.Q(timestamp=self.timestamp) & models.Q(created__lt=self.created)),
         )
 
-    def previous(self, using=None):
+    def previous(self, using=None) -> Union["Transaction", None]:
         """
         Returns:
             The transaction in this account that happened right after this.
+            Or None if it is the first transaction.
         """
         return self.before(using=using).first()
 
-    def get_account_owner(self):
-        return str(self.account.owner)
-
+    @property
     def is_transfer(self):
         return bool(self.destination_account)
 
