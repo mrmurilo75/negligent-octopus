@@ -1,4 +1,6 @@
 # ruff: noqa: F811
+import json
+import logging
 from datetime import timedelta
 
 import pytest
@@ -10,6 +12,8 @@ from negligent_octopus.core.models import Transaction
 from negligent_octopus.core.tests.factories import AccountFactory
 from negligent_octopus.core.tests.factories import TransactionFactory
 from negligent_octopus.core.tests.fixtures import account  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 faker = Faker()
 
@@ -72,61 +76,74 @@ class TestTransaction:
         assert not transaction.is_transfer
 
     def test_sequence(self, account: Account):
-        def inner_test_sequence(first, middle, last):
-            first = Transaction.objects.get(pk=first.pk)
-            middle = Transaction.objects.get(pk=middle.pk)
-            last = Transaction.objects.get(pk=last.pk)
+        def inner_test_sequence(transactions):
+            rtransactions = transactions[::-1]
+            length = len(rtransactions)
+            for i in range(length):
+                rtransactions[i] = Transaction.objects.get(pk=rtransactions[i].pk)
 
-            assert list(account.transaction_set.all()) == [
-                last,
-                middle,
-                first,
+            try:
+                assert list(account.transaction_set.all()) == rtransactions
+
+                assert rtransactions[0].next() is None
+                assert rtransactions[length - 1].previous() is None
+
+                for i in range(1, length):
+                    assert rtransactions[i].next() == rtransactions[i - 1]
+                    assert rtransactions[i - 1].previous() == rtransactions[i]
+
+                for i in range(length):
+                    assert list(rtransactions[i].after()) == rtransactions[:i]
+                    assert list(rtransactions[i].before()) == rtransactions[i + 1 :]
+            except AssertionError:
+                logger.warning(
+                    json.dumps(
+                        {t.title: str(t.timestamp) for t in transactions},
+                        indent=4,
+                    ),
+                )
+                raise
+
+        def get_transaction_stage():
+            account.transaction_set.all().delete()
+            return [
+                TransactionFactory(
+                    account=account,
+                    title=i,
+                    timestamp=timezone.now(),  # Make sure they are in order
+                )
+                for i in range(5)
             ]
 
-            assert first.next() == middle
-            assert middle.previous() == first
-
-            assert list(first.after()) == [
-                last,
-                middle,
-            ]
-            assert list(last.before()) == [
-                middle,
-                first,
-            ]
-
-            assert first.previous() is None
-            assert last.next() is None
-
-            assert len(first.before()) == 0
-            assert len(last.after()) == 0
-
-        transactions = [
-            TransactionFactory(
-                account=account,
-                title=title,
-                timestamp=timezone.now(),  # Make sure they are in order
-            )
-            for title in ("first", "middle", "last")
-        ]
-        inner_test_sequence(*transactions)
+        inner_test_sequence(get_transaction_stage())
 
         # Move middle backward by timestamp
-        transactions[1].title = "new_first"
+        transactions = get_transaction_stage()
+        transactions[1].title = "new 0"
         transactions[1].timestamp = transactions[0].timestamp - timedelta(seconds=1)
         transactions[1].save()
         transactions[0], transactions[1] = transactions[1], transactions[0]
-        inner_test_sequence(*transactions)
+        inner_test_sequence(transactions)
 
         # Move first forward by timestamp
-        transactions[0].title = "new_middle"
-        transactions[0].timestamp = transactions[2].timestamp
+        transactions = get_transaction_stage()
+        transactions[0].title = "new 2"
+        transactions[0].timestamp = transactions[3].timestamp
         # Same timestamp but created earlier
         transactions[0].save()
-        transactions[0], transactions[1] = transactions[1], transactions[0]
-        inner_test_sequence(*transactions)
+        transactions = transactions[1:3] + [transactions[0]] + transactions[3:]
+        inner_test_sequence(transactions)
 
-        # TODO Insert transaction between 1 and 2
+        # Insert transaction before last
+        transactions = get_transaction_stage()
+        new_transaction = TransactionFactory(
+            account=account,
+            title="new 3",
+            timestamp=transactions[2].timestamp,
+            # Same timestamp but created after
+        )
+        transactions = transactions[:2] + [new_transaction] + transactions[3:]
+        inner_test_sequence(transactions)
 
         # TODO Delete a transaction
 
