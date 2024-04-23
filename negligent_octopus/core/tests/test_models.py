@@ -66,6 +66,33 @@ class TestAccount:
 
 @pytest.mark.django_db()
 class TestTransaction:
+    def _move_backwards_to_first(self, transactions):
+        transactions[1].title = "new 0"
+        transactions[1].timestamp = transactions[0].timestamp - timedelta(seconds=1)
+        transactions[1].save()
+        transactions[0], transactions[1] = transactions[1], transactions[0]
+        return transactions
+
+    def _move_forward(self, transactions):
+        transactions[0].title = "new 2"
+        transactions[0].timestamp = transactions[3].timestamp
+        # Same timestamp but created earlier
+        transactions[0].save()
+        return transactions[1:3] + [transactions[0]] + transactions[3:]
+
+    def _insert_middle(self, account, transactions):
+        new_transaction = TransactionFactory(
+            account=account,
+            title="new 3",
+            timestamp=transactions[2].timestamp,
+            # Same timestamp but created after
+        )
+        return transactions[:3] + [new_transaction] + transactions[3:]
+
+    def _delete_middle(self, transactions):
+        transactions[3].delete()
+        return transactions[:3] + transactions[4:]
+
     def test_create(self, account: Account):
         value = 1.1
         transaction = TransactionFactory(
@@ -116,83 +143,37 @@ class TestTransaction:
             ]
 
         inner_test_sequence(get_transaction_stage())
-
-        # Move middle backward by timestamp
-        transactions = get_transaction_stage()
-        transactions[1].title = "new 0"
-        transactions[1].timestamp = transactions[0].timestamp - timedelta(seconds=1)
-        transactions[1].save()
-        transactions[0], transactions[1] = transactions[1], transactions[0]
-        inner_test_sequence(transactions)
-
-        # Move first forward by timestamp
-        transactions = get_transaction_stage()
-        transactions[0].title = "new 2"
-        transactions[0].timestamp = transactions[3].timestamp
-        # Same timestamp but created earlier
-        transactions[0].save()
-        transactions = transactions[1:3] + [transactions[0]] + transactions[3:]
-        inner_test_sequence(transactions)
-
-        # Insert transaction before last
-        transactions = get_transaction_stage()
-        new_transaction = TransactionFactory(
-            account=account,
-            title="new 3",
-            timestamp=transactions[2].timestamp,
-            # Same timestamp but created after
-        )
-        transactions = transactions[:2] + [new_transaction] + transactions[3:]
-        inner_test_sequence(transactions)
-
-        # TODO Delete a transaction
+        inner_test_sequence(self._move_backwards_to_first(get_transaction_stage()))
+        inner_test_sequence(self._move_forward(get_transaction_stage()))
+        inner_test_sequence(self._insert_middle(account, get_transaction_stage()))
+        inner_test_sequence(self._delete_middle(get_transaction_stage()))
 
     def test_balance(self, account: Account):
-        def inner_test_balance(first, middle, last):
-            first = Transaction.objects.get(pk=first.pk)
-            middle = Transaction.objects.get(pk=middle.pk)
-            last = Transaction.objects.get(pk=last.pk)
+        def inner_test_balance(transactions):
+            previous_balance = account.initial_balance
+            for transaction in transactions:
+                assert transaction.balance == previous_balance + transaction.amount
+                previous_balance = transaction.balance
 
-            assert first.balance == account.initial_balance + first.amount
-            assert middle.balance == first.balance + middle.amount
-            assert last.balance == middle.balance + last.amount
+        values = [(value + value / 10) for value in range(5)]
 
-        transactions = []
-        values = [(value + value / 10) for value in range(3)]
-        for title, value in enumerate(values):
-            transactions.append(
+        def get_transaction_stage():
+            account.transaction_set.all().delete()
+            return [
                 TransactionFactory(
                     account=account,
                     title=title,
                     amount=value,
                     timestamp=timezone.now(),  # Make sure they are in order
-                ),
-            )
-        inner_test_balance(*transactions)
+                )
+                for title, value in enumerate(values)
+            ]
 
-        # Move middle backward by timestamp
-        transactions[1].title = "new_0"
-        transactions[1].timestamp = transactions[0].timestamp - timedelta(seconds=1)
-        transactions[1].save()
-        transactions[0], transactions[1] = transactions[1], transactions[0]
-        inner_test_balance(*transactions)
-
-        # Move first forward by timestamp
-        transactions[0].title = "new_1"
-        transactions[0].timestamp = transactions[2].timestamp
-        # Same timestamp but created earlier
-        transactions[0].save()
-        transactions[0], transactions[1] = transactions[1], transactions[0]
-        inner_test_balance(*transactions)
-
-        # Change amount
-        transactions[0].amount += 1.1
-        transactions[0].save()
-        inner_test_balance(*transactions)
-
-        # TODO Insert transaction between 1 and 2
-
-        # TODO Delete a transaction
+        inner_test_balance(get_transaction_stage())
+        inner_test_balance(self._move_backwards_to_first(get_transaction_stage()))
+        inner_test_balance(self._move_forward(get_transaction_stage()))
+        inner_test_balance(self._insert_middle(account, get_transaction_stage()))
+        inner_test_balance(self._delete_middle(get_transaction_stage()))
 
     def test_transfer(self, account: Account):
         raise NotImplementedError
