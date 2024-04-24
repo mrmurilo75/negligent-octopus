@@ -230,6 +230,10 @@ class TestTransaction:
 
     def test_balance(self):
         def inner_test_balance(transactions):
+            transactions = [
+                Transaction.objects.get(pk=transaction.pk)
+                for transaction in transactions
+            ]
             try:
                 previous_balance = transactions[0].account.initial_balance
                 for transaction in transactions:

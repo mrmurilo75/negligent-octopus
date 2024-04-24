@@ -299,7 +299,7 @@ class Transaction(TimeStampedModel):
             if (
                 old_instance is not None
                 and self.timestamp > old_instance.timestamp
-                and self.pk != self.account.transaction_set.first()
+                and self.pk != self.account.transaction_set.only("pk").first().pk
             ):
                 start_transaction = old_instance.next()
             self.chain_update_balance(start_transaction, *args, **kwargs)
