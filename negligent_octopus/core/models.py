@@ -97,6 +97,14 @@ class Transaction(TimeStampedModel):
         editable=False,
     )
 
+    @property
+    def is_transfer(self):
+        return bool(self.destination_account)
+
+    @property
+    def account_owner(self):
+        return self.account.owner
+
     def after(self, using=None) -> QuerySet:
         """
         Returns:
@@ -140,10 +148,6 @@ class Transaction(TimeStampedModel):
             Or None if it is the first transaction.
         """
         return self.before(using=using).first()
-
-    @property
-    def is_transfer(self):
-        return bool(self.destination_account)
 
     @db_transaction.atomic
     def chain_update_balance(self, start_transaction, *args, **kwargs):

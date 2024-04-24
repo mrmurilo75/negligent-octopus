@@ -83,7 +83,7 @@ class TransactionAdmin(admin.ModelAdmin):
     ]
     readonly_fields = ["balance", "transfer_transaction"]
     list_display = [
-        "get_account_owner",
+        "account_owner",
         "account",
         "title",
         "amount",
