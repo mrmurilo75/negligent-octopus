@@ -66,32 +66,126 @@ class TestAccount:
 
 @pytest.mark.django_db()
 class TestTransaction:
-    def _move_backwards_to_first(self, transactions):
+    def get_transaction_stage(self, count=5):
+        account = AccountFactory()
+        return [
+            TransactionFactory(
+                account=account,
+                title=i,
+                timestamp=timezone.now(),  # Make sure they are in order
+            )
+            for i in range(count)
+        ]
+
+    def _move_backwards_to_first(self):
+        transactions = self.get_transaction_stage()
         transactions[1].title = "new 0"
         transactions[1].timestamp = transactions[0].timestamp - timedelta(seconds=1)
         transactions[1].save()
         transactions[0], transactions[1] = transactions[1], transactions[0]
         return transactions
 
-    def _move_forward(self, transactions):
+    def _move_forward(self):
+        transactions = self.get_transaction_stage()
         transactions[0].title = "new 2"
         transactions[0].timestamp = transactions[3].timestamp
         # Same timestamp but created earlier
         transactions[0].save()
         return transactions[1:3] + [transactions[0]] + transactions[3:]
 
-    def _insert_middle(self, account, transactions):
+    def _insert_middle(self):
+        transactions = self.get_transaction_stage()
         new_transaction = TransactionFactory(
-            account=account,
+            account=transactions[0].account,
             title="new 3",
             timestamp=transactions[2].timestamp,
             # Same timestamp but created after
         )
         return transactions[:3] + [new_transaction] + transactions[3:]
 
-    def _delete_middle(self, transactions):
+    def _delete_middle(self):
+        transactions = self.get_transaction_stage()
         transactions[3].delete()
         return transactions[:3] + transactions[4:]
+
+    def _insert_transfer_middle(self):
+        originals = self.get_transaction_stage()
+        destination_account = AccountFactory(name="destination")
+        destinations = [
+            TransactionFactory(
+                account=destination_account,
+                title=og.title,
+                timestamp=og.timestamp,
+            )
+            for og in originals
+        ]
+        new_transaction = TransactionFactory(
+            account=originals[0].account,
+            title="new 3",
+            timestamp=originals[2].timestamp,
+            # Same timestamp but created after
+            destination_account=destination_account,
+        )
+        originals = originals[:3] + [new_transaction] + originals[3:]
+        destinations = (
+            destinations[:3] + [new_transaction.transfer_transaction] + destinations[3:]
+        )
+        return originals, destinations, new_transaction
+
+    def _move_transfer_backwards_to_first(self):
+        originals, destinations, transfer = self._insert_transfer_middle()
+        transfer.title = "new 0"
+        transfer.timestamp = originals[0].timestamp - timedelta(seconds=1)
+        transfer.save()
+        originals = [transfer] + [t for t in originals if t.title != transfer.title]
+        destinations = [transfer.transfer_transaction] + [
+            t for t in destinations if t.title != transfer.title
+        ]
+
+        return originals, destinations
+
+    def _move_transfer_forward(self):
+        originals, destinations, transfer = self._insert_transfer_middle()
+        transfer.title = "new 2"
+        transfer.timestamp = originals[-2].timestamp
+        # Same timestamp but created after
+        transfer.save()
+        originals = [t for t in originals[:-1] if t.title != transfer.title] + [
+            transfer,
+            originals[-1],
+        ]
+        destinations = [t for t in destinations[:-1] if t.title != transfer.title] + [
+            transfer.transfer_transaction,
+            destinations[-1],
+        ]
+        return originals, destinations
+
+    def _delete_transfer(self):
+        originals, destinations, transfer = self._insert_transfer_middle()
+        transfer.delete()
+        originals = [t for t in originals if t.title != transfer.title]
+        destinations = [t for t in destinations if t.title != transfer.title]
+        return originals, destinations
+
+    def _test(self, test_function):
+        test_function(self.get_transaction_stage())
+        test_function(self._move_backwards_to_first())
+        test_function(self._move_forward())
+        test_function(self._insert_middle())
+        test_function(self._delete_middle())
+
+        originals, destinations, _t = self._insert_transfer_middle()
+        test_function(originals)
+        test_function(destinations)
+        originals, destinations = self._move_transfer_backwards_to_first()
+        test_function(originals)
+        test_function(destinations)
+        originals, destinations = self._move_transfer_forward()
+        test_function(originals)
+        test_function(destinations)
+        originals, destinations = self._delete_transfer()
+        test_function(originals)
+        test_function(destinations)
 
     def test_create(self, account: Account):
         value = 1.1
@@ -102,15 +196,16 @@ class TestTransaction:
         assert transaction.balance == account.initial_balance + value
         assert not transaction.is_transfer
 
-    def test_sequence(self, account: Account):
+    def test_sequence(self):
         def inner_test_sequence(transactions):
+            acc = transactions[0].account
             rtransactions = transactions[::-1]
             length = len(rtransactions)
             for i in range(length):
                 rtransactions[i] = Transaction.objects.get(pk=rtransactions[i].pk)
 
             try:
-                assert list(account.transaction_set.all()) == rtransactions
+                assert list(acc.transaction_set.all()) == rtransactions
 
                 assert rtransactions[0].next() is None
                 assert rtransactions[length - 1].previous() is None
@@ -131,283 +226,24 @@ class TestTransaction:
                 )
                 raise
 
-        def get_transaction_stage():
-            account.transaction_set.all().delete()
-            return [
-                TransactionFactory(
-                    account=account,
-                    title=i,
-                    timestamp=timezone.now(),  # Make sure they are in order
-                )
-                for i in range(5)
-            ]
+        self._test(inner_test_sequence)
 
-        inner_test_sequence(get_transaction_stage())
-        inner_test_sequence(self._move_backwards_to_first(get_transaction_stage()))
-        inner_test_sequence(self._move_forward(get_transaction_stage()))
-        inner_test_sequence(self._insert_middle(account, get_transaction_stage()))
-        inner_test_sequence(self._delete_middle(get_transaction_stage()))
-
-    def test_balance(self, account: Account):
+    def test_balance(self):
         def inner_test_balance(transactions):
-            previous_balance = account.initial_balance
-            for transaction in transactions:
-                assert transaction.balance == previous_balance + transaction.amount
-                previous_balance = transaction.balance
-
-        values = [(value + value / 10) for value in range(5)]
-
-        def get_transaction_stage():
-            account.transaction_set.all().delete()
-            return [
-                TransactionFactory(
-                    account=account,
-                    title=title,
-                    amount=value,
-                    timestamp=timezone.now(),  # Make sure they are in order
+            try:
+                previous_balance = transactions[0].account.initial_balance
+                for transaction in transactions:
+                    assert transaction.balance == (
+                        previous_balance + transaction.amount
+                    )
+                    previous_balance = transaction.balance
+            except AssertionError:
+                logger.warning(
+                    json.dumps(
+                        {t.title: t.balance for t in transactions},
+                        indent=4,
+                    ),
                 )
-                for title, value in enumerate(values)
-            ]
+                raise
 
-        inner_test_balance(get_transaction_stage())
-        inner_test_balance(self._move_backwards_to_first(get_transaction_stage()))
-        inner_test_balance(self._move_forward(get_transaction_stage()))
-        inner_test_balance(self._insert_middle(account, get_transaction_stage()))
-        inner_test_balance(self._delete_middle(get_transaction_stage()))
-
-    def test_transfer(self, account: Account):
-        raise NotImplementedError
-
-
-@pytest.mark.django_db()
-def test_transaction_transfer(account: Account):
-    transaction = TransactionFactory(
-        account=account,
-        amount=10.10,
-        timestamp=timezone.now(),
-    )
-    transaction.destination_account = AccountFactory()
-    transaction.save()
-    transaction.transfer_transaction.save()
-
-    assert transaction.transfer_transaction.amount == -transaction.amount
-    assert transaction.transfer_transaction.account == transaction.destination_account
-    assert (
-        transaction.destination_account.balance
-        == transaction.destination_account.initial_balance - transaction.amount
-    )
-    assert transaction.transfer_transaction.timestamp == transaction.timestamp
-    assert transaction.transfer_transaction.title == transaction.title
-    assert transaction.transfer_transaction.description == transaction.description
-    assert transaction.transfer_transaction.category == transaction.category
-    assert transaction.transfer_transaction.destination_account == transaction.account
-    assert transaction.transfer_transaction.transfer_transaction == transaction
-
-
-@pytest.mark.django_db()
-def test_transaction_transfer_delete(account: Account):
-    transaction = TransactionFactory(
-        account=account,
-        amount=10.10,
-        timestamp=timezone.now(),
-    )
-    destination_account = AccountFactory()
-    transaction.destination_account = destination_account
-    transaction.save()
-
-    transaction_pk = transaction.pk
-    transfer_pk = transaction.transfer_transaction.pk
-
-    transaction.delete(delete_transfer=True)
-
-    with pytest.raises(Transaction.DoesNotExist):
-        Transaction.objects.get(pk=transaction_pk)
-
-    with pytest.raises(Transaction.DoesNotExist):
-        Transaction.objects.get(pk=transfer_pk)
-
-    assert account.balance == account.initial_balance
-    assert destination_account.balance == destination_account.initial_balance
-
-
-@pytest.mark.django_db()
-class TestAccountTransactionBalance:
-    def test_transaction_balance(self, account: Account):
-        balance = account.initial_balance
-        for i in range(10):
-            TransactionFactory(
-                account=account,
-                amount=i,
-                timestamp=timezone.now(),  # Make sure they are in order
-            )
-        for i, transaction in zip(
-            range(10),
-            account.transaction_set.all().reverse(),
-            strict=False,
-        ):
-            balance += i
-            assert transaction.balance == balance
-
-    def test_account_initial_balance_change(self, account: Account):
-        balance = account.initial_balance
-        for i in range(10):
-            TransactionFactory(
-                account=account,
-                amount=i,
-                timestamp=timezone.now(),  # Make sure they are in order
-            )
-        account.initial_balance += 1
-        account.save()
-
-        for i, transaction in zip(
-            range(10),
-            account.transaction_set.all().reverse(),
-            strict=False,
-        ):
-            balance += i
-            assert transaction.balance == balance + 1
-
-    def test_transaction_added_before(self, account: Account):
-        now = timezone.now()
-        TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now,
-        )
-        transaction = TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now,
-        )
-        old_balance = account.balance
-
-        transaction_before = TransactionFactory(
-            account=account,
-            amount=11,
-            timestamp=now - timedelta(minutes=1),
-        )
-        TransactionFactory(
-            account=account,
-            amount=11,
-            timestamp=now - timedelta(minutes=1),
-        )
-
-        assert account.transaction_set.first().pk == transaction.pk
-        assert account.transaction_set.last().pk == transaction_before.pk
-
-        assert old_balance == account.initial_balance + 20
-        assert account.balance == old_balance + 22
-
-    def test_transaction_added_middle(self, account: Account):
-        now = timezone.now()
-        first_transaction = TransactionFactory(
-            account=account,
-            amount=1,
-            timestamp=now,
-        )
-        third_transaction = TransactionFactory(
-            account=account,
-            amount=100,
-            timestamp=now + timedelta(minutes=2),
-        )
-        TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now + timedelta(minutes=1),
-        )
-
-        # Reload instances
-        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
-        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
-
-        assert first_transaction.balance == account.initial_balance + 1
-        assert third_transaction.balance == account.initial_balance + 1 + 10 + 100
-
-    def test_transaction_change_amount(self, account: Account):
-        now = timezone.now()
-        first_transaction = TransactionFactory(
-            account=account,
-            amount=1,
-            timestamp=now,
-        )
-        second_transaction = TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now + timedelta(minutes=1),
-        )
-        third_transaction = TransactionFactory(
-            account=account,
-            amount=100,
-            timestamp=now + timedelta(minutes=2),
-        )
-        second_transaction.amount += 10
-        second_transaction.save()
-
-        # Reload instances
-        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
-        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
-
-        assert first_transaction.balance == account.initial_balance + 1
-        assert second_transaction.balance == account.initial_balance + 1 + 20
-        assert third_transaction.balance == account.initial_balance + 1 + 20 + 100
-
-    def test_transaction_delete(self, account: Account):
-        now = timezone.now()
-        first_transaction = TransactionFactory(
-            account=account,
-            amount=1,
-            timestamp=now,
-        )
-        second_transaction = TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now + timedelta(minutes=1),
-        )
-        third_transaction = TransactionFactory(
-            account=account,
-            amount=100,
-            timestamp=now + timedelta(minutes=2),
-        )
-        second_pk = second_transaction.pk
-        second_transaction.delete()
-
-        # Reload instances
-        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
-        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
-
-        assert first_transaction.balance == account.initial_balance + 1
-        with pytest.raises(Transaction.DoesNotExist):
-            account.transaction_set.get(pk=second_pk)
-
-        assert third_transaction.balance == account.initial_balance + 1 + 100
-
-    def test_transaction_timestamp_forward(self, account: Account):
-        now = timezone.now()
-        first_transaction = TransactionFactory(
-            account=account,
-            amount=1,
-            timestamp=now,
-        )
-        second_transaction = TransactionFactory(
-            account=account,
-            amount=10,
-            timestamp=now + timedelta(minutes=1),
-        )
-        third_transaction = TransactionFactory(
-            account=account,
-            amount=100,
-            timestamp=now + timedelta(minutes=2),
-        )
-        second_transaction.timestamp = now + timedelta(minutes=3)
-        second_transaction.save()
-
-        # Reload instances
-        first_transaction = account.transaction_set.get(pk=first_transaction.pk)
-        third_transaction = account.transaction_set.get(pk=third_transaction.pk)
-
-        assert first_transaction.balance == account.initial_balance + 1
-        assert third_transaction.balance == account.initial_balance + 1 + 100
-        assert second_transaction.balance == account.initial_balance + 1 + 10 + 100
-
-        assert second_transaction.next() is None
-        assert second_transaction.previous() == third_transaction
+        self._test(inner_test_balance)
