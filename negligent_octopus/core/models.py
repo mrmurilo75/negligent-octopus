@@ -249,12 +249,11 @@ class Transaction(TimeStampedModel):
         self.transfer_transaction.description = self.description
         self.transfer_transaction.category = self.category
         self.transfer_transaction.destination_account = self.account
+        self.transfer_transaction.transfer_transaction = self
 
         for kw in ("force_insert", "force_update", "update_fields"):
             kwargs.pop(kw, None)
         self.transfer_transaction.save(*args, sync_transfer=False, **kwargs)
-
-        self.transfer_transaction.transfer_transaction = self
 
     @db_transaction.atomic
     def save(

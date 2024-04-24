@@ -119,21 +119,21 @@ class TestTransaction:
             )
             for og in originals
         ]
-        new_transaction = TransactionFactory(
+        transfer = TransactionFactory(
             account=originals[0].account,
             title="new 3",
             timestamp=originals[2].timestamp,
             # Same timestamp but created after
             destination_account=destination_account,
         )
-        originals = originals[:3] + [new_transaction] + originals[3:]
+        originals = originals[:3] + [transfer] + originals[3:]
         destinations = (
-            destinations[:3] + [new_transaction.transfer_transaction] + destinations[3:]
+            destinations[:3] + [transfer.transfer_transaction] + destinations[3:]
         )
-        return originals, destinations, new_transaction
+        return originals, destinations, transfer, transfer.transfer_transaction
 
     def _move_transfer_backwards_to_first(self):
-        originals, destinations, transfer = self._insert_transfer_middle()
+        originals, destinations, transfer, other = self._insert_transfer_middle()
         transfer.title = "new 0"
         transfer.timestamp = originals[0].timestamp - timedelta(seconds=1)
         transfer.save()
@@ -142,10 +142,10 @@ class TestTransaction:
             t for t in destinations if t.title != transfer.title
         ]
 
-        return originals, destinations
+        return originals, destinations, transfer, other
 
     def _move_transfer_forward(self):
-        originals, destinations, transfer = self._insert_transfer_middle()
+        originals, destinations, transfer, other = self._insert_transfer_middle()
         transfer.title = "new 2"
         transfer.timestamp = originals[-2].timestamp
         # Same timestamp but created after
@@ -158,34 +158,47 @@ class TestTransaction:
             transfer.transfer_transaction,
             destinations[-1],
         ]
-        return originals, destinations
+        return originals, destinations, transfer, other
 
     def _delete_transfer(self):
-        originals, destinations, transfer = self._insert_transfer_middle()
+        originals, destinations, transfer, other = self._insert_transfer_middle()
         transfer.delete()
         originals = [t for t in originals if t.title != transfer.title]
         destinations = [t for t in destinations if t.title != transfer.title]
-        return originals, destinations
+        return originals, destinations, transfer, other
 
-    def _test(self, test_function):
+    def _test_all(self, test_function):
         test_function(self.get_transaction_stage())
         test_function(self._move_backwards_to_first())
         test_function(self._move_forward())
         test_function(self._insert_middle())
         test_function(self._delete_middle())
 
-        originals, destinations, _t = self._insert_transfer_middle()
-        test_function(originals)
-        test_function(destinations)
-        originals, destinations = self._move_transfer_backwards_to_first()
-        test_function(originals)
-        test_function(destinations)
-        originals, destinations = self._move_transfer_forward()
-        test_function(originals)
-        test_function(destinations)
-        originals, destinations = self._delete_transfer()
-        test_function(originals)
-        test_function(destinations)
+        self._test_transfer(test_function)
+
+    def _test_transfer(self, test_function, *, pass_transfer=False):
+        for action_function in (
+            self._insert_transfer_middle,
+            self._move_transfer_backwards_to_first,
+            self._move_transfer_forward,
+            self._delete_transfer,
+        ):
+            originals, destinations, transfer, other = action_function()
+            try:
+                test_function(
+                    *((originals, transfer, other) if pass_transfer else (originals,)),
+                )
+                test_function(
+                    *(
+                        (destinations, transfer, other)
+                        if pass_transfer
+                        else (destinations,)
+                    ),
+                )
+            except (AssertionError, AttributeError) as _e:
+                msg = f"action_function = {action_function}"
+                logger.warning(msg)
+                raise
 
     def test_create(self, account: Account):
         value = 1.1
@@ -195,6 +208,19 @@ class TestTransaction:
         )
         assert transaction.balance == account.initial_balance + value
         assert not transaction.is_transfer
+
+    def test_transfer_symmetry(self):
+        def inner_test_transfer_symmetry(transactions, transfer, other):
+            transfer_transaction = transfer.transfer_transaction
+            if transfer_transaction is not None:
+                assert other == transfer_transaction
+                assert transfer_transaction.account == transfer.destination_account
+                assert transfer_transaction.destination_account == transfer.account
+                assert transfer_transaction.transfer_transaction == transfer
+            else:
+                assert other.destination_account_name == transfer.account.name
+
+        self._test_transfer(inner_test_transfer_symmetry, pass_transfer=True)
 
     def test_sequence(self):
         def inner_test_sequence(transactions):
@@ -226,7 +252,7 @@ class TestTransaction:
                 )
                 raise
 
-        self._test(inner_test_sequence)
+        self._test_all(inner_test_sequence)
 
     def test_balance(self):
         def inner_test_balance(transactions):
@@ -250,4 +276,4 @@ class TestTransaction:
                 )
                 raise
 
-        self._test(inner_test_balance)
+        self._test_all(inner_test_balance)
