@@ -95,6 +95,7 @@ LOCAL_APPS = [
     "negligent_octopus.utils",
     "negligent_octopus.core",
     "negligent_octopus.budget",
+    "negligent_octopus.alpha_prototype",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
