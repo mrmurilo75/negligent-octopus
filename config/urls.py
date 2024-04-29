@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.shortcuts import redirect
 from django.urls import include
 from django.urls import path
 from django.views import defaults as default_views
@@ -12,8 +13,19 @@ from rest_framework.authtoken.views import obtain_auth_token
 
 from negligent_octopus.alpha_prototype.admin import alpha_admin_site
 
+
+def redirect_to_alpha(request):
+    if request.user.is_active:
+        return redirect("./alpha/")
+    return TemplateView.as_view(template_name="pages/home.html")(request)
+
+
 urlpatterns = [
-    path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
+    path(
+        "",
+        redirect_to_alpha,
+        name="home",
+    ),
     path(
         "about/",
         TemplateView.as_view(template_name="pages/about.html"),
