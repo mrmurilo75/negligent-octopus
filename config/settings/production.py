@@ -87,6 +87,22 @@ EMAIL_SUBJECT_PREFIX = env(
     default="[negligent-octopus] ",
 )
 
+# SMTP
+# ------------------------------------------------------------------------------
+EMAIL_BACKEND = env(
+    "DJANGO_EMAIL_BACKEND",
+    default="django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_PORT = env("DJANGO_EMAIL_PORT", default=587)
+EMAIL_USE_TLS = env("DJANGO_EMAIL_USE_TLS", default=True)
+
+# Gmail
+# ------------------------------------------------------------------------------
+# https://help.pythonanywhere.com/pages/SMTPForFreeUsers/
+EMAIL_HOST = env("DJANGO_EMAIL_HOST")
+EMAIL_HOST_USER = env("DJANGO_EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD")
+
 # ADMIN
 # ------------------------------------------------------------------------------
 # Django Admin URL regex.
