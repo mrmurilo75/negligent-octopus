@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
             model_name="importactivo",
             name="load",
             field=models.FileField(
-                upload_to=negligent_octopus.budget.models.upload_activo_import_to,
+                upload_to=negligent_octopus.budget.models.upload_import_file_to,
                 validators=[
                     negligent_octopus.utils.validators.FileExtensionValidator(
                         (

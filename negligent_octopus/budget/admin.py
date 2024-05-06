@@ -3,34 +3,33 @@ from django.contrib import admin
 from negligent_octopus.utils.admin import LimitedQuerysetInlineAdmin
 from negligent_octopus.utils.admin import LimitedQuerysetInlineFormset
 
-from .models import ImportActivo
-from .models import ImportedActivoTransaction
+from .models import SimpleImportedTransaction
+from .models import SimpleTransactionsImport
 
 
-class ImportedActivoTransactionInlineFormset(LimitedQuerysetInlineFormset):
+class SimpleImportedTransactionInlineFormset(LimitedQuerysetInlineFormset):
     def get_queryset(self, *args, **kwargs):
         return super().get_queryset(*args, **kwargs)[::-1]
 
 
-class ImportedActivoTransactionInlineAdmin(LimitedQuerysetInlineAdmin):
-    model = ImportedActivoTransaction
+class SimpleImportedTransactionInlineAdmin(LimitedQuerysetInlineAdmin):
+    model = SimpleImportedTransaction
     fk_name = "loaded_from"
     fields = [
         "loaded_from",
-        "date_of_movement",
-        "date_of_process",
-        "description",
-        "value",
+        "date",
+        "title",
+        "amount",
         "balance",
         "validated",
         "transaction",
     ]
     extra = 0
-    formset = ImportedActivoTransactionInlineFormset
+    formset = SimpleImportedTransactionInlineFormset
 
 
-@admin.register(ImportActivo)
-class ImportActivoAdmin(admin.ModelAdmin):
+@admin.register(SimpleTransactionsImport)
+class SimpleTransactionsImportAdmin(admin.ModelAdmin):
     list_display = ["owner", "name", "account", "processed", "created"]
     list_display_links = ["name"]
     search_fields = ["name", "account__name", "owner__name"]
@@ -40,7 +39,7 @@ class ImportActivoAdmin(admin.ModelAdmin):
         "processed",
         "created",
     ]
-    inlines = [ImportedActivoTransactionInlineAdmin]
+    inlines = [SimpleImportedTransactionInlineAdmin]
 
     def get_inlines(self, request, obj):
         if obj is None:
@@ -50,7 +49,7 @@ class ImportActivoAdmin(admin.ModelAdmin):
     def get_readonly_fields(
         self,
         request,
-        obj: ImportActivo | None = None,
+        obj=None,
     ):
         if obj is None:
             return self.readonly_fields
@@ -60,38 +59,35 @@ class ImportActivoAdmin(admin.ModelAdmin):
         return readonly_fields
 
 
-@admin.register(ImportedActivoTransaction)
-class ImportedActivoTransactionAdmin(admin.ModelAdmin):
+@admin.register(SimpleImportedTransaction)
+class SimpleImportedTransactionAdmin(admin.ModelAdmin):
     fields = [
         "loaded_from",
-        "date_of_movement",
-        "date_of_process",
-        "description",
-        "value",
+        "date",
+        "title",
+        "amount",
         "balance",
         "validated",
         "transaction",
     ]
     list_display = [
         "get_load_owner",
-        "date_of_movement",
-        "date_of_process",
-        "description",
-        "value",
+        "date",
+        "title",
+        "amount",
         "balance",
         "validated",
         "has_transaction",
     ]
-    list_display_links = ["description"]
+    list_display_links = ["title"]
     search_fields = [
-        "description",
-        "value",
+        "title",
+        "amount",
         "balance",
     ]
     list_filter = [
         "loaded_from__owner",
-        "date_of_movement",
-        "date_of_process",
+        "date",
         "validated",
     ]
     readonly_fields = ["loaded_from"]
@@ -100,10 +96,9 @@ class ImportedActivoTransactionAdmin(admin.ModelAdmin):
         if obj is not None and obj.validated and obj.transaction is not None:
             return [
                 *self.readonly_fields,
-                "date_of_movement",
-                "date_of_process",
-                "description",
-                "value",
+                "date",
+                "title",
+                "amount",
                 "balance",
                 "validated",
                 "transaction",

@@ -16,7 +16,7 @@ from negligent_octopus.utils import get_filename_no_extension
 from negligent_octopus.utils.validators import FileExtensionValidator
 
 
-def upload_activo_import_to(instance, filename):
+def upload_import_file_to(instance, filename):
     return (
         f"{slugify(instance.owner)}--{instance.owner.pk}/"
         f"{instance.account}/"
@@ -25,92 +25,14 @@ def upload_activo_import_to(instance, filename):
     )
 
 
-class ImportActivo(TimeStampedModel):
-    # TODO deal with each when importing - for activo we only deal with excel
-    ALLOWED_EXTENSIONS = (
-        "csv",
-        "xsls",
-        "xls",
-        "xlsx",
-        "xlsm",
-        "xlsb",
-        "odf",
-        "ods",
-        "odt",
+class SimpleImportedTransaction(TimeStampedModel):
+    loaded_from = models.ForeignKey(
+        "SimpleTransactionsImport",
+        on_delete=models.RESTRICT,
     )
-
-    owner = models.ForeignKey(User, on_delete=models.CASCADE)
-    name = models.CharField(max_length=255, blank=True)
-    load = models.FileField(
-        upload_to=upload_activo_import_to,
-        validators=[
-            FileExtensionValidator(ALLOWED_EXTENSIONS),
-        ],
-    )
-    account = models.ForeignKey(
-        Account,
-        on_delete=models.CASCADE,
-    )
-    processed = models.BooleanField(default=False)
-
-    def _set_name_from_filename(self):
-        try:
-            name = self.load.name.rsplit("/", 1)[1]
-        except IndexError:
-            name = self.load.name
-        self.name = get_filename_no_extension(name)
-
-    def _create_imported_transactions(self, commit=True):  # noqa: FBT002
-        transactions = []
-        with (Path(settings.MEDIA_ROOT) / Path(self.load.name)).open("rb") as xslx:
-            xls = pd.read_excel(
-                xslx,
-                skiprows=7,
-                names=[
-                    "date_of_movement",
-                    "date_of_process",
-                    "description",
-                    "value",
-                    "balance",
-                ],
-            )
-        for _i, row in xls.iterrows():
-            try:
-                self.importedactivotransaction_set.get(**row)
-            except ImportedActivoTransaction.DoesNotExist:
-                # TODO Pass in relevant args, kwargs
-                transaction = ImportedActivoTransaction(
-                    loaded_from=self,
-                    **row,
-                )
-                transactions.append(transaction)
-                if commit:
-                    transaction.save()
-        return transactions
-
-    def save(self, *args, **kwargs):
-        if not self.name:
-            self._set_name_from_filename()
-        super().save(*args, **kwargs)
-
-        if not self.processed:
-            self._create_imported_transactions(commit=True)
-            self.processed = True
-            kwargs["update_fields"] = {"processed"}
-            super().save(*args, **kwargs)
-
-    class Meta(TimeStampedModel.Meta):
-        verbose_name = "Activo Import"
-        verbose_name_plural = "Activo Imports"
-        ordering = ["created"]
-
-
-class ImportedActivoTransaction(TimeStampedModel):
-    loaded_from = models.ForeignKey(ImportActivo, on_delete=models.RESTRICT)
-    date_of_movement = models.DateField()
-    date_of_process = models.DateField()
-    description = models.CharField(max_length=255)
-    value = models.FloatField()
+    date = models.DateField()
+    title = models.CharField(max_length=255)
+    amount = models.FloatField()
     balance = models.FloatField()
     validated = models.BooleanField(default=False)
     transaction = models.OneToOneField(
@@ -131,22 +53,129 @@ class ImportedActivoTransaction(TimeStampedModel):
         if self.validated and not self.transaction:
             self.transaction = Transaction.objects.create(
                 account=self.loaded_from.account,
-                amount=self.value,
+                amount=self.amount,
                 timestamp=datetime.combine(
-                    self.date_of_process,
+                    self.date,
                     datetime.min.time(),
                     tzinfo=timezone.get_current_timezone(),
                 ),
                 balance=self.balance,
-                title=self.description,
+                title=self.title,
             )
             kwargs["update_fields"] = {"transaction", "validated"}
             super().save(*args, **kwargs)
 
     def __str__(self):
-        return str(self.description)
+        return str(self.title)
 
     class Meta(TimeStampedModel.Meta):
-        verbose_name = "Imported Activo Transaction"
-        verbose_name_plural = "Imported Activo Transactions"
-        ordering = ["-date_of_process", "-created"]
+        verbose_name = "Simple Imported Transaction"
+        verbose_name_plural = "Simple Imported Transactions"
+        ordering = ["-date", "-created"]
+
+
+class SimpleTransactionsImport(TimeStampedModel):
+    READABLE_EXTENSIONS = {
+        "csv": pd.read_csv,
+        "xsls": pd.read_excel,
+        "xls": pd.read_excel,
+        "xlsx": pd.read_excel,
+        "xlsm": pd.read_excel,
+        "xlsb": pd.read_excel,
+    }
+    child_transaction_class = SimpleImportedTransaction
+    child_transaction_related_name = None
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=255, blank=True)
+    load = models.FileField(
+        upload_to=upload_import_file_to,
+        validators=[
+            FileExtensionValidator(READABLE_EXTENSIONS.keys()),
+        ],
+    )
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+    )
+    processed = models.BooleanField(default=False)
+
+    @property
+    def child_transaction_manager(self):
+        if self.child_transaction_related_name is not None:
+            return getattr(self, self.child_transaction_related_name)
+        return getattr(
+            self,
+            f"{self.child_transaction_class.__name__.lower()}_set",
+        )
+
+    def _set_name_from_filename(self):
+        try:
+            name = self.load.name.rsplit("/", 1)[1]
+        except IndexError:
+            name = self.load.name
+        self.name = get_filename_no_extension(name)
+
+    def create_imported_transactions(
+        self,
+        read_func_args=None,
+        read_func_kwargs=None,
+        *,
+        row_to_model=lambda **x: x,
+        commit=True,
+    ):
+        if read_func_args is None:
+            read_func_args = ()
+        if read_func_kwargs is None:
+            read_func_kwargs = {
+                "names": [
+                    "date",
+                    "title",
+                    "amount",
+                    "balance",
+                ],
+                "header": 0,
+            }
+
+        transactions = []
+        with (Path(settings.MEDIA_ROOT) / Path(self.load.name)).open("rb") as data_file:
+            extension = self.load.name.rsplit(".", 1)[1]
+            read_file = self.READABLE_EXTENSIONS[extension]
+            data = read_file(
+                data_file,
+                *read_func_args,
+                **read_func_kwargs,
+            )
+
+        for _i, row in data.iterrows():
+            values = row_to_model(**row)
+            try:
+                self.child_transaction_manager.get(**values)
+            except self.child_transaction_class.DoesNotExist:
+                # TODO Pass in relevant args, kwargs
+                transaction = self.child_transaction_class(
+                    loaded_from=self,
+                    **values,
+                )
+                transactions.append(transaction)
+
+                if commit:
+                    transaction.save()
+
+        return transactions
+
+    def save(self, *args, **kwargs):
+        if not self.name:
+            self._set_name_from_filename()
+        super().save(*args, **kwargs)
+
+        if not self.processed:
+            self.create_imported_transactions(commit=True)
+            self.processed = True
+            kwargs["update_fields"] = {"processed"}
+            super().save(*args, **kwargs)
+
+    class Meta(TimeStampedModel.Meta):
+        verbose_name = "Simple Transactions Import"
+        verbose_name_plural = "Simple Imports"
+        ordering = ["-created"]

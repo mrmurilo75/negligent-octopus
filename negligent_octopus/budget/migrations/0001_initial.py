@@ -51,7 +51,7 @@ class Migration(migrations.Migration):
                 (
                     "load",
                     models.FileField(
-                        upload_to=negligent_octopus.budget.models.upload_activo_import_to,
+                        upload_to=negligent_octopus.budget.models.upload_import_file_to,
                         validators=[
                             negligent_octopus.utils.validators.FileExtensionValidator(
                                 ("csv", "xsls")
