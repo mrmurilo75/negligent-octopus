@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -10,7 +11,6 @@ from model_utils.models import TimeStampedModel
 
 from negligent_octopus.core.models import Account
 from negligent_octopus.core.models import Transaction
-from negligent_octopus.users.models import User
 from negligent_octopus.utils import get_filename_extension
 from negligent_octopus.utils import get_filename_no_extension
 from negligent_octopus.utils.validators import FileExtensionValidator
@@ -86,7 +86,7 @@ class SimpleTransactionsImport(TimeStampedModel):
     child_transaction_class = SimpleImportedTransaction
     child_transaction_related_name = None
 
-    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
     name = models.CharField(max_length=255, blank=True)
     load = models.FileField(
         upload_to=upload_import_file_to,

@@ -1,5 +1,6 @@
 from typing import Union
 
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.db import transaction as db_transaction
 from django.db.models.query import QuerySet
@@ -7,12 +8,10 @@ from django.utils import timezone
 from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
 
-from negligent_octopus.users.models import User
-
 
 class Category(TimeStampedModel, SoftDeletableModel):
     name = models.CharField(max_length=255)
-    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
 
     def __str__(self):
         return str(self.name)
@@ -25,7 +24,7 @@ class Category(TimeStampedModel, SoftDeletableModel):
 
 
 class Account(TimeStampedModel, SoftDeletableModel):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     initial_balance = models.FloatField(default=0.0)
 
