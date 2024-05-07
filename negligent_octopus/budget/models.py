@@ -91,7 +91,7 @@ class SimpleTransactionsImport(TimeStampedModel):
     load = models.FileField(
         upload_to=upload_import_file_to,
         validators=[
-            FileExtensionValidator(READABLE_EXTENSIONS.keys()),
+            FileExtensionValidator(tuple(READABLE_EXTENSIONS.keys())),
         ],
     )
     account = models.ForeignKey(
