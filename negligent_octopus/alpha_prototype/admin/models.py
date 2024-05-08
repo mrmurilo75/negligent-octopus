@@ -20,23 +20,23 @@ class BaseOpenAdmin:
         return qs.filter(**{self.user_relation_field: request.user})
 
 
-class OpenSimpleTransactionsImportAdmin(SimpleTransactionsImportAdmin, BaseOpenAdmin):
+class OpenSimpleTransactionsImportAdmin(BaseOpenAdmin, SimpleTransactionsImportAdmin):
     pass
 
 
-class OpenSimpleImportedTransactionAdmin(SimpleImportedTransactionAdmin, BaseOpenAdmin):
+class OpenSimpleImportedTransactionAdmin(BaseOpenAdmin, SimpleImportedTransactionAdmin):
     user_relation_field = "loaded_from__owner"
 
 
-class OpenCategoryAdmin(CategoryAdmin, BaseOpenAdmin):
+class OpenCategoryAdmin(BaseOpenAdmin, CategoryAdmin):
     pass
 
 
-class OpenTransactionAdmin(TransactionAdmin, BaseOpenAdmin):
+class OpenTransactionAdmin(BaseOpenAdmin, TransactionAdmin):
     user_relation_field = "account__owner"
 
 
-class OpenAccountAdmin(AccountAdmin, BaseOpenAdmin):
+class OpenAccountAdmin(BaseOpenAdmin, AccountAdmin):
     pass
 
 
