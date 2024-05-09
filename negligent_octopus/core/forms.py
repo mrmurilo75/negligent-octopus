@@ -1,22 +1,17 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
+from negligent_octopus.utils.forms import ExtendedModelForm
+
 from .models import Account
 from .models import Transaction
 
 
-class BaseForm(forms.ModelForm):
-    def _override_field_queryset(self, field_name, model_class, filter_kwargs):
-        field = self.fields.get(field_name, None)
-        if field is not None:
-            field.queryset = model_class.objects.filter(**filter_kwargs)
-
-
-class AccountForm(BaseForm):
+class AccountForm(ExtendedModelForm):
     owner = forms.ModelChoiceField(
         widget=forms.HiddenInput(),
         required=False,
-        queryset=get_user_model().objects.none(),
+        queryset=None,
         # WARNING: Set it in view. Prevents user from selecting something not his.
     )
 
@@ -24,7 +19,7 @@ class AccountForm(BaseForm):
         super().__init__(*args, **kwargs)
         instance = kwargs.get("instance", None)
         if instance is not None:
-            self._override_field_queryset(
+            self.limit_field_queryset(
                 "owner",
                 get_user_model(),
                 {"pk": instance.owner.id},
@@ -32,22 +27,22 @@ class AccountForm(BaseForm):
 
     class Meta:
         model = Account
-        fields = "__all__"  # noqa: DJ007
+        fields = "__all__"
 
 
-class TransactionForm(BaseForm):
+class TransactionForm(ExtendedModelForm):
     account = forms.ModelChoiceField(
-        queryset=Account.objects.none(),
+        queryset=None,
         # WARNING: Set it in view. Prevents user from selecting something not his.
     )
     destination_account = forms.ModelChoiceField(
         required=False,
-        queryset=Account.objects.none(),
+        queryset=None,
         # WARNING: Set it in view. Prevents user from selecting something not his.
     )
     transfer_transaction = forms.ModelChoiceField(
         required=False,
-        queryset=Transaction.objects.none(),
+        queryset=None,
         # WARNING: Set it in view. Prevents user from selecting something not his.
     )
 
@@ -55,17 +50,17 @@ class TransactionForm(BaseForm):
         super().__init__(*args, **kwargs)
         instance = kwargs.get("instance", None)
         if instance is not None:
-            self._override_field_queryset(
+            self.limit_field_queryset(
                 "account",
                 Account,
                 {"owner": instance.account.owner},
             )
-            self._override_field_queryset(
+            self.limit_field_queryset(
                 "destination_account",
                 Account,
                 {"owner": instance.account.owner},
             )
-            self._override_field_queryset(
+            self.limit_field_queryset(
                 "transfer_transaction",
                 Transaction,
                 {"account__owner": instance.account.owner},
@@ -73,4 +68,4 @@ class TransactionForm(BaseForm):
 
     class Meta:
         model = Transaction
-        fields = "__all__"  # noqa: DJ007
+        fields = "__all__"
