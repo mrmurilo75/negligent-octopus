@@ -10,13 +10,10 @@ from .models import Transaction
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    fields = ["name", "owner", "is_removed"]
+    fields = ["name", "owner"]
     list_display = ["name", "owner"]
     search_fields = ["name", "owner__username"]
-    list_filter = [
-        "owner",
-        "is_removed",
-    ]
+    list_filter = ["owner"]
 
 
 class TransactionInlineFormset(LimitedQuerysetInlineFormset):
@@ -52,12 +49,9 @@ class TransactionInlineAdmin(LimitedQuerysetInlineAdmin):
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
     fields = ["name", "owner", "initial_balance", "balance"]
-    list_display = ["name", "owner", "balance", "created", "is_removed"]
+    list_display = ["name", "owner", "balance", "created"]
     search_fields = ["name", "owner__username"]
-    list_filter = [
-        "owner",
-        "is_removed",
-    ]
+    list_filter = ["owner"]
     readonly_fields = ["balance"]
     inlines = [TransactionInlineAdmin]
 

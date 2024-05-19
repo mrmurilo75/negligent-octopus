@@ -9,7 +9,7 @@ from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
 
 
-class Category(TimeStampedModel, SoftDeletableModel):
+class Category(TimeStampedModel):
     name = models.CharField(max_length=255)
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
 
@@ -23,7 +23,7 @@ class Category(TimeStampedModel, SoftDeletableModel):
         unique_together = ["owner", "name"]
 
 
-class Account(TimeStampedModel, SoftDeletableModel):
+class Account(TimeStampedModel):
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     initial_balance = models.FloatField(default=0.0)
@@ -49,10 +49,6 @@ class Account(TimeStampedModel, SoftDeletableModel):
         except self.__class__.DoesNotExist:
             pass
         super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        # TODO Delete all transfers before continuing
-        return super().delete(*args, **kwargs)
 
     def __str__(self):
         return str(self.name)
@@ -268,11 +264,6 @@ class Transaction(TimeStampedModel):
             if using is not None:
                 manager = manager.using(using)
             old_instance = manager.get(pk=self.pk)
-            # TODO Change recalculating balance on transactions to a lazy strategy
-            # TODO Allow change timestamp ->
-            #    If moved backwards, continue.
-            #    If moved forward, subtract amount starting at old_timestamp
-            #       until new timestamp.
             if old_instance.account != self.account:
                 msg = "Cannot change 'account'."
                 raise ValueError(msg)

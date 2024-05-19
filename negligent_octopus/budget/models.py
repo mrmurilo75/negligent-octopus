@@ -28,7 +28,7 @@ def upload_import_file_to(instance, filename):
 class SimpleImportedTransaction(TimeStampedModel):
     loaded_from = models.ForeignKey(
         "SimpleTransactionsImport",
-        on_delete=models.RESTRICT,
+        on_delete=models.CASCADE,
     )
     date = models.DateField()
     title = models.CharField(max_length=255)
